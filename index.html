@@ -177,7 +177,7 @@
       <div class="msel" id="fstatusWrap">
         <button type="button" class="msel-btn" onclick="toggleMsel(event)">Status: <b id="fstatusLabel">—</b> ▾</button>
         <div class="msel-panel" id="fstatusPanel">
-          <div class="msel-actions"><a onclick="setStatusAll(false)">Todos</a> · <a onclick="setStatusAll(true)">Só enviados</a></div>
+          <div class="msel-actions"><a onclick="setStatusAll(false)">Todos</a> · <a onclick="setStatusAll(true)">Padrão</a></div>
           <div id="fstatusOpts"></div>
         </div>
       </div>
@@ -436,7 +436,8 @@ function fillFilters(){
 }
 
 /* filtro de Status com seleção múltipla (padrão: só "Projeto Enviado") */
-let statusSel = new Set(['Projeto Enviado']);
+const STATUS_PADRAO = ['Aguardando','Enviar Novo Projeto','Projeto Enviado'];
+let statusSel = new Set(STATUS_PADRAO);
 function buildStatusFilter(){
   const opts=optsList('status',BASE_STATUS);
   document.getElementById('fstatusOpts').innerHTML = opts.map(s=>
@@ -446,7 +447,7 @@ function buildStatusFilter(){
 }
 function onStatusToggle(cb){ cb.checked?statusSel.add(cb.value):statusSel.delete(cb.value);
   updateStatusLabel(); render(); }
-function setStatusAll(sóEnviados){ statusSel = sóEnviados ? new Set(['Projeto Enviado']) : new Set();
+function setStatusAll(padrao){ statusSel = padrao ? new Set(STATUS_PADRAO) : new Set();
   buildStatusFilter(); render(); }
 function updateStatusLabel(){ const l=document.getElementById('fstatusLabel');
   l.textContent = statusSel.size===0 ? 'Todos' : (statusSel.size===1 ? [...statusSel][0] : statusSel.size+' selecionados'); }
