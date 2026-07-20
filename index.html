@@ -154,6 +154,7 @@
   </div>
   <div class="sp"></div>
   <button class="btn btn-primary" onclick="openEdit()">+ Novo projeto</button>
+  <button class="btn btn-ghost" onclick="atualizar()">⟳ Atualizar</button>
   <button class="btn btn-ghost" onclick="exportCSV()">Exportar Excel</button>
   <button class="btn btn-ghost" onclick="exportJSON()">Backup</button>
   <button class="btn btn-ghost" onclick="doLogout()">Sair</button>
@@ -256,6 +257,7 @@
     </div>
     <div class="mfoot">
       <button class="btn btn-danger" id="delBtn" onclick="delProject()">Excluir</button>
+      <button class="btn" id="fatBtn" style="background:var(--amber-b);color:var(--amber-t)" onclick="faturarProjeto()">💲 Faturar</button>
       <div class="sp" style="flex:1"></div>
       <button class="btn btn-line" onclick="closeEdit()">Cancelar</button>
       <button class="btn" style="background:var(--blue);color:#fff" onclick="saveProject()">Salvar</button>
@@ -362,8 +364,24 @@ async function loadData(){
   ]);
   if(e1){ toast('Erro ao carregar: '+e1.message); return; }
   DB.projetos = (proj||[]).map(toCamel);
-  DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,pago:r.pago}));
+  DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,
+    pago:r.pago,projetoId:r.projeto_id,dataPagamento:r.data_pagamento}));
   refresh();
+}
+function hoje(){ return new Date().toISOString().slice(0,10); }
+async function atualizar(){ await loadData(); toast('Atualizado da nuvem ✔'); }
+
+/* cria (uma vez) a cobrança em A Receber ligada ao projeto */
+async function ensureReceberForProject(p){
+  if(!p || !p.id || (p.valor||0)<=0) return false;
+  if(DB.receber.some(r=>r.projetoId===p.id)) return false;   // já lançado
+  const {data,error}=await sb.from('receber')
+    .insert({cliente:p.cliente,tipo:p.tipo,empresa:p.empresa||null,valor:p.valor,pago:false,projeto_id:p.id})
+    .select();
+  if(error){ toast('Erro ao lançar em A receber: '+error.message); return false; }
+  DB.receber.push({id:data[0].id,cliente:p.cliente,tipo:p.tipo,empresa:p.empresa,valor:p.valor,
+    pago:false,projetoId:p.id,dataPagamento:null});
+  return true;
 }
 
 /* ---------- RENDER ---------- */
@@ -411,7 +429,10 @@ function render(){
   const fc=document.getElementById('fcat').value, fsi=document.getElementById('fsit').value;
   const note=document.getElementById('fnote');
   if(cliFilter){ note.style.display='flex';
-    note.innerHTML=`Mostrando projetos de <b>&nbsp;${cliFilter}</b> &nbsp;<a href="#" onclick="cliFilter='';render();return false" style="color:var(--blue-d)">✕ limpar</a>`;}
+    note.innerHTML=`Serviços de <b>&nbsp;${cliFilter}</b>
+      &nbsp;<button class="btn" style="background:var(--blue);color:#fff;padding:4px 10px;font-size:12px"
+        onclick="novoProjetoCliente('${cliFilter.replace(/'/g,"\\'")}')">+ Novo projeto p/ este cliente</button>
+      &nbsp;<a href="#" onclick="cliFilter='';render();return false" style="color:var(--blue-d)">✕ limpar</a>`;}
   else note.style.display='none';
   let rows=DB.projetos.filter(p=>{
     if(cliFilter && p.cliente!==cliFilter) return false;
@@ -440,14 +461,34 @@ function renderClientes(){
   const q=(document.getElementById('qc').value||'').toLowerCase();
   const map={};
   DB.projetos.forEach(p=>{ const c=p.cliente; if(!c) return;
-    if(!map[c]) map[c]={n:0,v:0,cpf:p.cpf}; map[c].n++; map[c].v+=(p.valor||0); });
+    if(!map[c]) map[c]={n:0,v:0,cpf:p.cpf,aguard:0,enviado:0}; map[c].n++; map[c].v+=(p.valor||0);
+    if(p.status==='Aguardando') map[c].aguard++;
+    if(p.status==='Projeto Enviado') map[c].enviado++; });
   let names=Object.keys(map).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(q) names=names.filter(n=>n.toLowerCase().includes(q));
   const g=document.getElementById('cligrid');
-  g.innerHTML=names.map(n=>`<div class="cli" onclick="cliFilter='${n.replace(/'/g,"\\'")}';setView('projetos')">
+  g.innerHTML=names.map(n=>{ const m=map[n]; const chips=[];
+    if(m.enviado) chips.push(`<span class="chip blue">Projeto Enviado${m.enviado>1?' ('+m.enviado+')':''}</span>`);
+    if(m.aguard) chips.push(`<span class="chip amber">Aguardando${m.aguard>1?' ('+m.aguard+')':''}</span>`);
+    return `<div class="cli" onclick="abrirCliente('${n.replace(/'/g,"\\'")}')">
     <div class="nm">${n}</div>
-    <div class="mt">${map[n].n} projeto(s) • ${money(map[n].v)}${map[n].cpf?'<br>CPF '+map[n].cpf:''}</div>
-  </div>`).join('') || `<div class="empty">Nenhum cliente.</div>`;
+    <div class="mt">${m.n} projeto(s) • ${money(m.v)}${m.cpf?'<br>CPF '+m.cpf:''}</div>
+    ${chips.length?`<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">${chips.join('')}</div>`:''}
+  </div>`;}).join('') || `<div class="empty">Nenhum cliente.</div>`;
+}
+function abrirCliente(nome){ cliFilter=nome; setView('projetos'); }
+/* item 5: novo projeto já com os dados do cliente */
+function novoProjetoCliente(nome){
+  const proj=DB.projetos.filter(p=>p.cliente===nome)
+    .sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
+  const ref=proj[0]||{};
+  openEdit();
+  document.getElementById('f-cliente').value=nome;
+  document.getElementById('f-cpf').value=(proj.find(p=>p.cpf)||{}).cpf||'';
+  document.getElementById('f-dataEntrada').value=hoje();
+  fillSelect('f-tipo',optsList('tipo',BASE_TIPOS), ref.tipo||'');
+  fillSelect('f-status',optsList('status',BASE_STATUS), 'Aguardando');
+  fillSelect('f-situacao',optsList('situacao',BASE_SIT), 'Aguardando');
 }
 function renderPainel(){
   const count=(field)=>{const m={};DB.projetos.forEach(p=>{const k=p[field]||'—';m[k]=(m[k]||0)+1;});
@@ -496,6 +537,7 @@ function openEdit(id){
   const p = id ? DB.projetos.find(x=>x.id===id) : null;
   document.getElementById('mtitle').textContent = p?'Editar projeto':'Novo projeto';
   document.getElementById('delBtn').style.display = p?'inline-flex':'none';
+  document.getElementById('fatBtn').style.display = p?'inline-flex':'none';
   const g=(k)=>p?(p[k]??''):'';
   document.getElementById('f-id').value = p?p.id:'';
   ['cliente','idProjeto','instalacao','cpf','mes','valor','potencia','modulos',
@@ -522,11 +564,30 @@ async function saveProject(){
     protocolo:val('protocolo'), ntVistoria:val('ntVistoria'), obs:val('obs') };
   if(!obj.cliente){ toast('Informe o cliente'); return; }
   const row=toSnake(obj);
-  let error;
+  const isNew=!idv; let novoId=null, error;
   if(idv){ row.id=+idv; ({error}=await sb.from('projetos').update(row).eq('id',+idv)); }
-  else { row.id=nextId(); ({error}=await sb.from('projetos').insert(row)); }
+  else { novoId=nextId(); row.id=novoId; ({error}=await sb.from('projetos').insert(row)); }
   if(error){ toast('Erro ao salvar: '+error.message); return; }
-  await loadData(); closeEdit(); toast(idv?'Projeto atualizado':'Projeto adicionado');
+  await loadData();
+  if(isNew){ const np=DB.projetos.find(x=>x.id===novoId);
+    if(await ensureReceberForProject(np)){ refresh(); toast('Projeto adicionado e lançado em A receber'); }
+    else toast('Projeto adicionado'); }
+  else toast('Projeto atualizado');
+  closeEdit();
+}
+
+/* item 1: Faturar na ficha do projeto -> grava data de hoje + lança em A receber */
+async function faturarProjeto(){
+  const idv=+document.getElementById('f-id').value;
+  if(!idv){ toast('Salve o projeto primeiro, depois fature'); return; }
+  const d=hoje();
+  const {error}=await sb.from('projetos').update({faturado:d}).eq('id',idv);
+  if(error){ toast('Erro ao faturar: '+error.message); return; }
+  const p=DB.projetos.find(x=>x.id===idv); if(p) p.faturado=d;
+  document.getElementById('f-faturado').value=d;
+  const lancou=await ensureReceberForProject(p);
+  refresh();
+  toast(lancou?'Faturado + lançado em A receber ✔':'Faturado ✔ (já estava em A receber)');
 }
 async function delProject(){
   const idv=+document.getElementById('f-id').value;
@@ -539,10 +600,17 @@ async function delProject(){
 
 /* ---------- A RECEBER ---------- */
 async function togglePago(id, pago){
-  const {error}=await sb.from('receber').update({pago:pago}).eq('id',id);
+  const d=pago?hoje():null;
+  const {error}=await sb.from('receber').update({pago:pago,data_pagamento:d}).eq('id',id);
   if(error){ toast('Erro: '+error.message); return; }
-  const r=DB.receber.find(x=>x.id===id); if(r) r.pago=pago;
-  renderKpis(); renderPainel(); toast(pago?'Marcado como Pago ✔':'Voltou para Aguardando');
+  const r=DB.receber.find(x=>x.id===id); if(r){ r.pago=pago; r.dataPagamento=d; }
+  // item 2: ao pagar, grava a data de hoje no Faturado do projeto ligado
+  if(pago && r && r.projetoId){
+    await sb.from('projetos').update({faturado:d}).eq('id',r.projetoId);
+    const p=DB.projetos.find(x=>x.id===r.projetoId); if(p) p.faturado=d;
+  }
+  renderKpis(); renderPainel(); if(view==='projetos') render();
+  toast(pago?'Pago em '+d2br(d)+' — Faturado atualizado ✔':'Voltou para Aguardando');
 }
 async function updateRecEmpresa(id, empresa){
   const {error}=await sb.from('receber').update({empresa:empresa||null}).eq('id',id);
