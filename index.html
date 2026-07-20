@@ -209,11 +209,13 @@
     <div class="card" style="padding:14px 18px"><div id="barSit"></div></div>
     <div class="sec-title">A receber</div>
     <div class="card"><div style="overflow-x:auto"><table>
-      <thead><tr><th>Cliente</th><th>Tipo</th><th class="right">Valor</th><th class="center">Pagamento</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Valor</th><th class="center">Pagamento</th></tr></thead>
       <tbody id="recRows"></tbody></table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 14px;border-top:1px solid var(--line)">
         <input id="nr-cliente" placeholder="Cliente" style="flex:2;min-width:150px">
         <input id="nr-tipo" placeholder="Tipo de serviço" style="flex:1.5;min-width:120px">
+        <input id="nr-empresa" list="empresas-list" placeholder="Empresa" style="flex:1.2;min-width:120px">
+        <datalist id="empresas-list"></datalist>
         <input id="nr-valor" type="number" step="1" placeholder="Valor R$" style="width:110px">
         <button class="btn" style="background:var(--blue);color:#fff" onclick="addReceber()">+ Adicionar</button>
       </div>
@@ -360,7 +362,7 @@ async function loadData(){
   ]);
   if(e1){ toast('Erro ao carregar: '+e1.message); return; }
   DB.projetos = (proj||[]).map(toCamel);
-  DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,valor:r.valor,pago:r.pago}));
+  DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,pago:r.pago}));
   refresh();
 }
 
@@ -458,14 +460,24 @@ function renderPainel(){
   document.getElementById('barSit').innerHTML=bar(count('situacao'));
   const rec=(DB.receber||[]).slice().sort((a,b)=>(a.pago?1:0)-(b.pago?1:0) || (b.valor||0)-(a.valor||0));
   const pendTotal=rec.filter(r=>!r.pago).reduce((s,r)=>s+(r.valor||0),0);
-  document.getElementById('recRows').innerHTML=(rec.length?rec.map(r=>`<tr style="${r.pago?'opacity:.55':''}">
-    <td>${r.pago?'<s>':''}${r.cliente}${r.pago?'</s>':''}</td><td>${r.tipo||'—'}</td>
+  const emps=uniq([...DB.projetos.map(p=>p.empresa), ...rec.map(r=>r.empresa)])
+    .sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  document.getElementById('empresas-list').innerHTML=emps.map(e=>`<option value="${e.replace(/"/g,'&quot;')}">`).join('');
+  const empSel=(r)=>`<select onchange="updateRecEmpresa(${r.id},this.value)" style="padding:5px 6px;font-size:12px;max-width:150px">
+      <option value=""></option>${emps.map(e=>`<option${e===r.empresa?' selected':''}>${e}</option>`).join('')}</select>`;
+  const stSel=(r)=>`<select onchange="togglePago(${r.id},this.value==='pago')"
+      style="padding:5px 8px;font-size:12px;font-weight:600;border-radius:20px;border:none;cursor:pointer;
+      background:${r.pago?'var(--green-b)':'var(--amber-b)'};color:${r.pago?'var(--green-t)':'var(--amber-t)'}">
+      <option value="aguardando"${r.pago?'':' selected'}>Aguardando</option>
+      <option value="pago"${r.pago?' selected':''}>Pago</option></select>`;
+  document.getElementById('recRows').innerHTML=(rec.length?rec.map(r=>`<tr style="${r.pago?'opacity:.6':''}">
+    <td>${r.cliente}</td><td>${r.tipo||'—'}</td>
+    <td>${empSel(r)}</td>
     <td class="right">${money(r.valor)}</td>
-    <td class="center"><button class="btn ${r.pago?'btn-line':''}" style="${r.pago?'':'background:var(--green-b);color:var(--green-t)'};padding:4px 10px;font-size:12px"
-      onclick="togglePago(${r.id},${r.pago?'false':'true'})">${r.pago?'↩ Reabrir':'✔ Pago'}</button></td>
+    <td class="center">${stSel(r)}</td>
   </tr>`).join('')
-    +`<tr><td></td><td class="right"><b>TOTAL PENDENTE</b></td><td class="right"><b>${money(pendTotal)}</b></td><td></td></tr>`
-    : `<tr><td colspan="4" class="empty">Nada a receber.</td></tr>`);
+    +`<tr><td></td><td></td><td class="right"><b>TOTAL PENDENTE</b></td><td class="right"><b>${money(pendTotal)}</b></td><td></td></tr>`
+    : `<tr><td colspan="5" class="empty">Nada a receber.</td></tr>`);
 }
 function setView(v){
   view=v;
@@ -530,17 +542,24 @@ async function togglePago(id, pago){
   const {error}=await sb.from('receber').update({pago:pago}).eq('id',id);
   if(error){ toast('Erro: '+error.message); return; }
   const r=DB.receber.find(x=>x.id===id); if(r) r.pago=pago;
-  renderKpis(); renderPainel(); toast(pago?'Marcado como pago ✔':'Reaberto');
+  renderKpis(); renderPainel(); toast(pago?'Marcado como Pago ✔':'Voltou para Aguardando');
+}
+async function updateRecEmpresa(id, empresa){
+  const {error}=await sb.from('receber').update({empresa:empresa||null}).eq('id',id);
+  if(error){ toast('Erro: '+error.message); return; }
+  const r=DB.receber.find(x=>x.id===id); if(r) r.empresa=empresa;
+  toast('Empresa atualizada');
 }
 async function addReceber(){
   const cliente=document.getElementById('nr-cliente').value.trim();
   const tipo=document.getElementById('nr-tipo').value.trim();
+  const empresa=document.getElementById('nr-empresa').value.trim();
   const v=document.getElementById('nr-valor').value;
   if(!cliente || v===''){ toast('Informe cliente e valor'); return; }
-  const {data,error}=await sb.from('receber').insert({cliente,tipo,valor:parseFloat(v),pago:false}).select();
+  const {data,error}=await sb.from('receber').insert({cliente,tipo,empresa:empresa||null,valor:parseFloat(v),pago:false}).select();
   if(error){ toast('Erro: '+error.message); return; }
-  DB.receber.push({id:data[0].id,cliente,tipo,valor:parseFloat(v),pago:false});
-  ['nr-cliente','nr-tipo','nr-valor'].forEach(i=>document.getElementById(i).value='');
+  DB.receber.push({id:data[0].id,cliente,tipo,empresa,valor:parseFloat(v),pago:false});
+  ['nr-cliente','nr-tipo','nr-empresa','nr-valor'].forEach(i=>document.getElementById(i).value='');
   renderKpis(); renderPainel(); toast('Cobrança adicionada');
 }
 
