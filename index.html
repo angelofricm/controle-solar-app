@@ -154,6 +154,7 @@
   </div>
   <div class="sp"></div>
   <button class="btn btn-primary" onclick="openEdit()">+ Novo projeto</button>
+  <button class="btn btn-ghost" onclick="abrirCroqui()">📐 Croqui</button>
   <button class="btn btn-ghost" onclick="atualizar()">⟳ Atualizar</button>
   <button class="btn btn-ghost" onclick="exportCSV()">Exportar Excel</button>
   <button class="btn btn-ghost" onclick="exportJSON()">Backup</button>
@@ -396,6 +397,22 @@ async function loadData(){
 }
 function hoje(){ return new Date().toISOString().slice(0,10); }
 async function atualizar(){ await loadData(); toast('Atualizado da nuvem ✔'); }
+
+const CROQUI_PASTA = 'C:/NV-Desenhos/';
+const CROQUI_ARQUIVO = 'desenho inspeção 2007.xls';
+function abrirCroqui(){
+  if(location.protocol==='file:'){
+    const url='file:///'+CROQUI_PASTA+encodeURIComponent(CROQUI_ARQUIVO);
+    const a=document.createElement('a'); a.href=url; a.target='_blank'; a.rel='noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Abrindo croqui…');
+  } else {
+    alert('📐 CROQUI\n\nO arquivo do croqui está no seu computador:\n'
+      + CROQUI_PASTA.replace(/\//g,'\\') + CROQUI_ARQUIVO
+      + '\n\nPor segurança, o navegador só abre arquivos do PC quando você usa o app pelo atalho '
+      + '"Controle Solar - Online" na Área de Trabalho.\n\nPelo link no celular não é possível abrir arquivos do computador.');
+  }
+}
 
 /* cria (uma vez) a cobrança em A Receber ligada ao projeto */
 async function ensureReceberForProject(p){
