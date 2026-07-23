@@ -268,6 +268,7 @@
         <div class="field"><label>Empresa</label><input id="f-empresa" list="empresas-modal">
           <datalist id="empresas-modal"></datalist></div>
         <div class="field"><label>Nº Protocolo</label><input id="f-protocolo"></div>
+        <div class="field"><label>Parecer de Acesso</label><input id="f-parecerAcesso"></div>
         <div class="field"><label>NT Vistoria</label><input id="f-ntVistoria"></div>
       </div>
       <div class="field full" style="margin-top:12px"><label>Observação</label>
@@ -313,7 +314,7 @@ function empChip(e){ return e?`<span class="chip" style="${empStyle(e)}">${e}</s
 const FIELDS = [['id','id'],['categoria','categoria'],['mes','mes'],['idProjeto','id_projeto'],
   ['cliente','cliente'],['instalacao','instalacao'],['cpf','cpf'],['tipo','tipo'],['valor','valor'],
   ['potencia','potencia'],['modulos','modulos'],['dataEntrada','data_entrada'],['protocolo','protocolo'],
-  ['dataVistoria','data_vistoria'],['ntVistoria','nt_vistoria'],['status','status'],['situacao','situacao'],
+  ['dataVistoria','data_vistoria'],['parecerAcesso','parecer_acesso'],['ntVistoria','nt_vistoria'],['status','status'],['situacao','situacao'],
   ['faturado','faturado'],['empresa','empresa'],['obs','obs']];
 function toCamel(r){ const o={}; FIELDS.forEach(([c,s])=>o[c]=r[s]); return o; }
 function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) return;
@@ -321,6 +322,7 @@ function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) 
 
 let DB = {projetos:[], receber:[]};
 let view = 'projetos';
+let HAS_PARECER = true;  // vira false se a coluna parecer_acesso ainda nao existir no banco
 let cliFilter = '';
 let loginMode = 'login';
 
@@ -389,6 +391,7 @@ async function loadData(){
     sb.from('receber').select('*')
   ]);
   if(e1){ toast('Erro ao carregar: '+e1.message); return; }
+  if(proj && proj.length) HAS_PARECER = ('parecer_acesso' in proj[0]);
   DB.projetos = (proj||[]).map(toCamel);
   DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,
     pago:r.pago,projetoId:r.projeto_id,dataPagamento:r.data_pagamento}));
@@ -608,12 +611,15 @@ function openEdit(id){
   const g=(k)=>p?(p[k]??''):'';
   document.getElementById('f-id').value = p?p.id:'';
   ['cliente','idProjeto','instalacao','cpf','mes','valor','potencia','modulos',
-   'dataEntrada','dataVistoria','faturado','empresa','protocolo','ntVistoria','obs']
+   'dataEntrada','dataVistoria','faturado','empresa','protocolo','parecerAcesso','ntVistoria','obs']
     .forEach(k=>document.getElementById('f-'+k).value = g(k)==null?'':(''+g(k)).slice(0, k.startsWith('data')||k==='faturado'?10:9999));
   fillSelect('f-categoria',['Projeto Principal','Outro Serviço'], p?p.categoria:'Projeto Principal');
   fillSelect('f-tipo',optsList('tipo',BASE_TIPOS), g('tipo'));
   fillSelect('f-status',optsList('status',BASE_STATUS), g('status'));
   fillSelect('f-situacao',optsList('situacao',BASE_SIT), g('situacao'));
+  const pa=document.getElementById('f-parecerAcesso');
+  pa.disabled=!HAS_PARECER;
+  pa.placeholder=HAS_PARECER?'':'(será liberado após atualização do banco)';
   document.getElementById('overlay').classList.add('open');
 }
 function closeEdit(){ document.getElementById('overlay').classList.remove('open'); }
@@ -628,9 +634,10 @@ async function saveProject(){
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:document.getElementById('f-status').value,
     situacao:document.getElementById('f-situacao').value, empresa:val('empresa'),
-    protocolo:val('protocolo'), ntVistoria:val('ntVistoria'), obs:val('obs') };
+    protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), ntVistoria:val('ntVistoria'), obs:val('obs') };
   if(!obj.cliente){ toast('Informe o cliente'); return; }
   const row=toSnake(obj);
+  if(!HAS_PARECER) delete row.parecer_acesso;
   const isNew=!idv; let novoId=null, error;
   if(idv){ row.id=+idv; ({error}=await sb.from('projetos').update(row).eq('id',+idv)); }
   else { novoId=nextId(); row.id=novoId; ({error}=await sb.from('projetos').insert(row)); }
@@ -709,9 +716,9 @@ const idbSet=(k,v)=>idbReq('readwrite',s=>s.put(v,k));
 
 function buildXlsx(){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','protocolo','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
+    'modulos','dataEntrada','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Protocolo','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
+    'Módulos','Data Entrada','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
   const aoa=[head, ...proj.map(p=>cols.map(c=>p[c]==null?'':p[c]))];
   const wb=XLSX.utils.book_new();
@@ -752,9 +759,9 @@ async function exportJSON(){
 }
 function exportCSV(){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','protocolo','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
+    'modulos','dataEntrada','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Protocolo','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
+    'Módulos','Data Entrada','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
   const esc=(v)=>{v=(v==null?'':String(v)); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
   const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(p[c])).join(';')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
