@@ -134,12 +134,24 @@
     <div class="lg-logo"><img id="llogo" alt="FR Soluções Elétricas"></div>
     <h2>Controle Solar</h2>
     <p class="s" id="lg-sub">Entre para acessar seus projetos</p>
-    <div class="field"><label>E-mail</label><input id="lg-email" type="email" autocomplete="username" placeholder="voce@exemplo.com"></div>
-    <div class="field"><label>Senha</label><input id="lg-pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+    <div id="lg-step-pass">
+      <div class="field"><label>E-mail</label><input id="lg-email" type="email" autocomplete="username" placeholder="voce@exemplo.com"></div>
+      <div class="field"><label>Senha</label><input id="lg-pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+    </div>
+    <div id="lg-step-mfa" style="display:none">
+      <div class="field"><label>Código do app (6 dígitos)</label>
+        <input id="lg-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="letter-spacing:4px;text-align:center;font-size:18px"></div>
+    </div>
+    <div id="lg-step-enroll" style="display:none">
+      <p class="s" style="text-align:left;margin-bottom:8px">1) Instale o app <b>Google Authenticator</b> no celular<br>2) Escaneie o QR code abaixo<br>3) Digite o código de 6 dígitos que aparecer</p>
+      <div id="lg-qr" style="text-align:center;margin:8px 0"></div>
+      <div class="s" style="font-size:11px;word-break:break-all">Não consegue escanear? Digite esta chave no app:<br><b id="lg-secret"></b></div>
+      <div class="field" style="margin-top:10px"><label>Código do app (6 dígitos)</label>
+        <input id="lg-ecode" inputmode="numeric" maxlength="6" placeholder="000000" style="letter-spacing:4px;text-align:center;font-size:18px"></div>
+    </div>
     <div id="lg-msg"></div>
     <div class="lg-actions">
-      <button class="btn" id="lg-btn" onclick="submitLogin()">Entrar</button>
-      <button id="lg-toggle" onclick="toggleMode()">Primeira vez? Criar meu acesso</button>
+      <button class="btn" id="lg-btn" onclick="loginAction()">Entrar</button>
     </div>
   </div>
 </div>
@@ -324,7 +336,8 @@ let DB = {projetos:[], receber:[]};
 let view = 'projetos';
 let HAS_PARECER = true;  // vira false se a coluna parecer_acesso ainda nao existir no banco
 let cliFilter = '';
-let loginMode = 'login';
+let loginStep = 'pass';   // pass | mfa | enroll
+let mfaFactorId = null;
 
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2200); }
@@ -343,37 +356,83 @@ function nextId(){ return DB.projetos.reduce((m,p)=>Math.max(m,p.id||0),0)+1; }
 /* ---------- AUTH ---------- */
 function lgMsg(t,color){ const el=document.getElementById('lg-msg'); el.textContent=t||'';
   el.style.color = color||'#b91c1c'; }
-function toggleMode(){
-  loginMode = loginMode==='login' ? 'signup' : 'login';
-  document.getElementById('lg-sub').textContent = loginMode==='login'
-    ? 'Entre para acessar seus projetos' : 'Crie sua senha de acesso (primeira vez)';
-  document.getElementById('lg-btn').textContent = loginMode==='login' ? 'Entrar' : 'Criar acesso';
-  document.getElementById('lg-toggle').textContent = loginMode==='login'
-    ? 'Primeira vez? Criar meu acesso' : 'Já tenho acesso — entrar';
-  document.getElementById('lg-pass').setAttribute('autocomplete',
-    loginMode==='login'?'current-password':'new-password');
+function showStep(step){
+  loginStep = step;
+  document.getElementById('lg-step-pass').style.display   = step==='pass'   ? '' : 'none';
+  document.getElementById('lg-step-mfa').style.display    = step==='mfa'    ? '' : 'none';
+  document.getElementById('lg-step-enroll').style.display = step==='enroll' ? '' : 'none';
+  const sub=document.getElementById('lg-sub'), btn=document.getElementById('lg-btn');
+  if(step==='pass'){   sub.textContent='Entre para acessar seus projetos'; btn.textContent='Entrar'; }
+  if(step==='mfa'){    sub.textContent='Verificação em 2 passos'; btn.textContent='Confirmar';
+    setTimeout(()=>{const c=document.getElementById('lg-code'); c.value=''; c.focus();},50); }
+  if(step==='enroll'){ sub.textContent='Ative a verificação em 2 passos'; btn.textContent='Ativar'; }
   lgMsg('');
+}
+function loginAction(){
+  if(loginStep==='pass')   return submitLogin();
+  if(loginStep==='mfa')    return verifyChallenge();
+  if(loginStep==='enroll') return confirmEnroll();
 }
 async function submitLogin(){
   const email=(document.getElementById('lg-email').value||'').trim();
   const pass=document.getElementById('lg-pass').value||'';
   if(!email || !pass){ lgMsg('Preencha e-mail e senha.'); return; }
-  const btn=document.getElementById('lg-btn'); btn.disabled=true;
-  btn.textContent = loginMode==='login' ? 'Entrando…' : 'Criando…';
+  const btn=document.getElementById('lg-btn'); btn.disabled=true; btn.textContent='Entrando…';
   try{
-    if(loginMode==='login'){
-      const {error}=await sb.auth.signInWithPassword({email,password:pass});
-      if(error){ lgMsg('E-mail ou senha incorretos.'); return; }
-    } else {
-      if(pass.length<6){ lgMsg('A senha precisa ter ao menos 6 caracteres.'); return; }
-      const {error}=await sb.auth.signUp({email,password:pass});
-      if(error){ lgMsg(error.message); return; }
-      const {data:{session}}=await sb.auth.getSession();
-      if(!session){ lgMsg('Acesso criado! Agora confirme pelo e-mail e depois entre.','#166534'); return; }
-    }
+    const {error}=await sb.auth.signInWithPassword({email,password:pass});
+    if(error){ lgMsg('E-mail ou senha incorretos.'); return; }
+    await gateMFA();
+  } finally { btn.disabled=false; if(loginStep==='pass') btn.textContent='Entrar'; }
+}
+async function gateMFA(){
+  let aal;
+  try{ ({data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel()); }
+  catch(e){ await onLoggedIn(); return; }
+  if(!aal || aal.currentLevel==='aal2'){ await onLoggedIn(); return; }
+  if(aal.nextLevel==='aal2'){                       // já tem 2FA -> pedir código
+    const {data:f}=await sb.auth.mfa.listFactors();
+    const totp = f && f.totp && f.totp[0];
+    if(!totp){ await onLoggedIn(); return; }
+    mfaFactorId = totp.id;
+    showStep('mfa');
+  } else {                                          // ainda não tem 2FA -> configurar
+    await startEnroll();
+  }
+}
+async function startEnroll(){
+  try{ const {data:f}=await sb.auth.mfa.listFactors();   // remove tentativas não concluídas
+    for(const fac of ((f&&f.all)||[])) if(fac.status!=='verified') await sb.auth.mfa.unenroll({factorId:fac.id});
+  }catch(e){}
+  const {data,error}=await sb.auth.mfa.enroll({factorType:'totp',friendlyName:'Controle Solar '+Date.now()});
+  if(error){ lgMsg(error.message); showStep('pass'); return; }
+  mfaFactorId = data.id;
+  document.getElementById('lg-qr').innerHTML = '<img alt="QR code" style="width:180px;height:180px;border:1px solid var(--line);border-radius:8px" src="'+data.totp.qr_code+'">';
+  document.getElementById('lg-secret').textContent = data.totp.secret;
+  showStep('enroll');
+}
+async function confirmEnroll(){
+  const code=(document.getElementById('lg-ecode').value||'').replace(/\D/g,'');
+  if(code.length!==6){ lgMsg('Digite o código de 6 dígitos do app.'); return; }
+  const btn=document.getElementById('lg-btn'); btn.disabled=true; btn.textContent='Ativando…';
+  try{
+    const {data:ch,error:e1}=await sb.auth.mfa.challenge({factorId:mfaFactorId});
+    if(e1){ lgMsg(e1.message); return; }
+    const {error:e2}=await sb.auth.mfa.verify({factorId:mfaFactorId,challengeId:ch.id,code});
+    if(e2){ lgMsg('Código incorreto. Use o código que está no app agora.'); return; }
     await onLoggedIn();
-  } finally { btn.disabled=false;
-    btn.textContent = loginMode==='login' ? 'Entrar' : 'Criar acesso'; }
+  } finally { btn.disabled=false; if(loginStep==='enroll') btn.textContent='Ativar'; }
+}
+async function verifyChallenge(){
+  const code=(document.getElementById('lg-code').value||'').replace(/\D/g,'');
+  if(code.length!==6){ lgMsg('Digite o código de 6 dígitos do app.'); return; }
+  const btn=document.getElementById('lg-btn'); btn.disabled=true; btn.textContent='Confirmando…';
+  try{
+    const {data:ch,error:e1}=await sb.auth.mfa.challenge({factorId:mfaFactorId});
+    if(e1){ lgMsg(e1.message); return; }
+    const {error:e2}=await sb.auth.mfa.verify({factorId:mfaFactorId,challengeId:ch.id,code});
+    if(e2){ lgMsg('Código incorreto. Tente o código atual do app.'); return; }
+    await onLoggedIn();
+  } finally { btn.disabled=false; if(loginStep==='mfa') btn.textContent='Confirmar'; }
 }
 async function doLogout(){ await sb.auth.signOut(); location.reload(); }
 async function onLoggedIn(){
@@ -381,8 +440,24 @@ async function onLoggedIn(){
   document.getElementById('hsub').textContent = 'Nuvem · ' + (user?user.email:'');
   document.getElementById('loginOverlay').style.display='none';
   document.getElementById('appRoot').classList.remove('hide');
+  resetIdle();
   await loadData();
 }
+
+/* ---- logout automático por inatividade (5 min) ---- */
+let idleTimer=null;
+const IDLE_MS = 5*60*1000;
+function resetIdle(){
+  clearTimeout(idleTimer);
+  if(document.getElementById('appRoot').classList.contains('hide')) return; // só quando logado
+  idleTimer=setTimeout(async()=>{
+    try{ await sb.auth.signOut(); }catch(e){}
+    alert('Sessão encerrada por segurança (5 minutos sem uso). Faça login novamente.');
+    location.reload();
+  }, IDLE_MS);
+}
+['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>
+  document.addEventListener(ev, resetIdle, {passive:true}));
 
 /* ---------- DATA ---------- */
 async function loadData(){
@@ -772,11 +847,12 @@ function dl(blob,name){ const a=document.createElement('a'); a.href=URL.createOb
 
 function refresh(){ renderKpis(); fillFilters(); setView(view); }
 document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id==='overlay') closeEdit(); });
-document.getElementById('lg-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') submitLogin(); });
+['lg-pass','lg-code','lg-ecode'].forEach(id=>
+  document.getElementById(id).addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); loginAction(); } }));
 
 (async function boot(){
   const {data:{session}} = await sb.auth.getSession();
-  if(session) await onLoggedIn();
+  if(session) await gateMFA();
 })();
 </script>
 </body>
