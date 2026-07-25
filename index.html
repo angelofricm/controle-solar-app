@@ -446,13 +446,13 @@ async function onLoggedIn(){
 
 /* ---- logout automático por inatividade (5 min) ---- */
 let idleTimer=null;
-const IDLE_MS = 5*60*1000;
+const IDLE_MS = 20*60*1000;
 function resetIdle(){
   clearTimeout(idleTimer);
   if(document.getElementById('appRoot').classList.contains('hide')) return; // só quando logado
   idleTimer=setTimeout(async()=>{
     try{ await sb.auth.signOut(); }catch(e){}
-    alert('Sessão encerrada por segurança (5 minutos sem uso). Faça login novamente.');
+    alert('Sessão encerrada por segurança (20 minutos sem uso). Faça login novamente.');
     location.reload();
   }, IDLE_MS);
 }
