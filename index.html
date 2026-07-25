@@ -456,6 +456,7 @@ function resetIdle(){
   clearTimeout(idleTimer);
   if(document.getElementById('appRoot').classList.contains('hide')) return; // só quando logado
   idleTimer=setTimeout(async()=>{
+    try{ await exportJSON(true); }catch(e){}   // backup automático (se a pasta de backup já foi escolhida)
     try{ await sb.auth.signOut(); }catch(e){}
     alert('Sessão encerrada por segurança (20 minutos sem uso). Faça login novamente.');
     location.reload();
@@ -478,6 +479,10 @@ async function loadData(){
   refresh();
 }
 function hoje(){ return new Date().toISOString().slice(0,10); }
+function carimbo(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'_'+p(d.getHours())+'h'+p(d.getMinutes()); }
+function carimboLegivel(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' às '+p(d.getHours())+':'+p(d.getMinutes()); }
 async function atualizar(){ await loadData(); toast('Atualizado da nuvem ✔'); }
 
 /* cria (uma vez) a cobrança em A Receber ligada ao projeto */
@@ -794,46 +799,48 @@ function idbReq(mode, fn){ return new Promise((res,rej)=>{ const o=indexedDB.ope
 const idbGet=(k)=>idbReq('readonly',s=>s.get(k));
 const idbSet=(k,v)=>idbReq('readwrite',s=>s.put(v,k));
 
-function buildXlsx(){
+function buildXlsx(quando){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
     'modulos','dataEntrada','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
     'Módulos','Data Entrada','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
-  const aoa=[head, ...proj.map(p=>cols.map(c=>p[c]==null?'':p[c]))];
+  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=>p[c]==null?'':p[c]))];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Projetos');
   return XLSX.write(wb,{type:'array',bookType:'xlsx'});
 }
 
-async function ensureDir(){
+async function ensureDir(silent){
   let h=null; try{ h=await idbGet('dir'); }catch(e){}
   if(h){ let p=await h.queryPermission({mode:'readwrite'});
-    if(p!=='granted') p=await h.requestPermission({mode:'readwrite'});
+    if(p!=='granted' && !silent) p=await h.requestPermission({mode:'readwrite'});
     if(p==='granted') return h; }
+  if(silent) return null;                 // automático: não abre seletor de pasta sem o usuário
   h=await window.showDirectoryPicker({mode:'readwrite', id:'backup-controle-solar'});
   await idbSet('dir',h); return h;
 }
 async function writeInto(dir,name,data){ const fh=await dir.getFileHandle(name,{create:true});
   const w=await fh.createWritable(); await w.write(data); await w.close(); }
 
-async function exportJSON(){
-  const date=new Date().toISOString().slice(0,10);
-  const jsonBlob=new Blob([JSON.stringify(DB,null,1)],{type:'application/json'});
-  const xlsxBlob=new Blob([buildXlsx()],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const jname=`backup-controle-solar-${date}.json`, xname=`projetos-solar-${date}.xlsx`;
+async function exportJSON(auto){
+  const quando=carimboLegivel();
+  const jsonBlob=new Blob([JSON.stringify({backup_em:quando, ...DB},null,1)],{type:'application/json'});
+  const xlsxBlob=new Blob([buildXlsx(quando)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const jname=`backup-controle-solar-${carimbo()}.json`, xname=`projetos-solar-${carimbo()}.xlsx`;
   if(window.showDirectoryPicker){
     try{
-      const dir=await ensureDir();
-      await writeInto(dir,jname,jsonBlob);
-      await writeInto(dir,xname,xlsxBlob);
-      toast('Backup salvo na pasta (JSON + Excel) ✔');
-      return;
+      const dir=await ensureDir(auto);
+      if(dir){ await writeInto(dir,jname,jsonBlob); await writeInto(dir,xname,xlsxBlob);
+        if(!auto) toast('Backup salvo na pasta (JSON + Excel) ✔'); return; }
+      if(auto) return;                     // automático sem pasta configurada: não insiste
     }catch(e){
       if(e && e.name==='AbortError'){ toast('Backup cancelado'); return; }
+      if(auto) return;
       toast('Não deu p/ salvar na pasta — baixando…');
     }
   }
+  if(auto) return;
   dl(jsonBlob,jname); dl(xlsxBlob,xname);
   toast('Backup baixado (JSON + Excel)');
 }
