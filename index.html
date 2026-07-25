@@ -273,6 +273,7 @@
         <div class="field"><label>Potência (kWp)</label><input id="f-potencia" type="number" step="0.01"></div>
         <div class="field"><label>Total módulos</label><input id="f-modulos" type="number" step="1"></div>
         <div class="field"><label>Data entrada</label><input id="f-dataEntrada" type="date"></div>
+        <div class="field"><label>Data de Envio</label><input id="f-dataEnvio" type="date"></div>
         <div class="field"><label>Data vistoria</label><input id="f-dataVistoria" type="date"></div>
         <div class="field"><label>Faturado em</label><input id="f-faturado" type="date"></div>
         <div class="field"><label>Status</label><select id="f-status"></select></div>
@@ -325,7 +326,7 @@ function empChip(e){ return e?`<span class="chip" style="${empStyle(e)}">${e}</s
 
 const FIELDS = [['id','id'],['categoria','categoria'],['mes','mes'],['idProjeto','id_projeto'],
   ['cliente','cliente'],['instalacao','instalacao'],['cpf','cpf'],['tipo','tipo'],['valor','valor'],
-  ['potencia','potencia'],['modulos','modulos'],['dataEntrada','data_entrada'],['protocolo','protocolo'],
+  ['potencia','potencia'],['modulos','modulos'],['dataEntrada','data_entrada'],['dataEnvio','data_envio'],['protocolo','protocolo'],
   ['dataVistoria','data_vistoria'],['parecerAcesso','parecer_acesso'],['ntVistoria','nt_vistoria'],['status','status'],['situacao','situacao'],
   ['faturado','faturado'],['empresa','empresa'],['obs','obs']];
 function toCamel(r){ const o={}; FIELDS.forEach(([c,s])=>o[c]=r[s]); return o; }
@@ -696,7 +697,7 @@ function openEdit(id){
   const g=(k)=>p?(p[k]??''):'';
   document.getElementById('f-id').value = p?p.id:'';
   ['cliente','idProjeto','instalacao','cpf','mes','valor','potencia','modulos',
-   'dataEntrada','dataVistoria','faturado','empresa','protocolo','parecerAcesso','ntVistoria','obs']
+   'dataEntrada','dataEnvio','dataVistoria','faturado','empresa','protocolo','parecerAcesso','ntVistoria','obs']
     .forEach(k=>document.getElementById('f-'+k).value = g(k)==null?'':(''+g(k)).slice(0, k.startsWith('data')||k==='faturado'?10:9999));
   fillSelect('f-categoria',['Projeto Principal','Outro Serviço'], p?p.categoria:'Projeto Principal');
   fillSelect('f-tipo',optsList('tipo',BASE_TIPOS), g('tipo'));
@@ -716,7 +717,7 @@ async function saveProject(){
     categoria:document.getElementById('f-categoria').value, cliente:val('cliente'),
     idProjeto:val('idProjeto'), instalacao:val('instalacao'), cpf:val('cpf'), mes:val('mes'),
     tipo:document.getElementById('f-tipo').value, valor:numv('valor'), potencia:numv('potencia'),
-    modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataVistoria:val('dataVistoria'),
+    modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:document.getElementById('f-status').value,
     situacao:document.getElementById('f-situacao').value, empresa:val('empresa'),
     protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), ntVistoria:val('ntVistoria'), obs:val('obs') };
@@ -801,9 +802,9 @@ const idbSet=(k,v)=>idbReq('readwrite',s=>s.put(v,k));
 
 function buildXlsx(quando){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
   const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=>p[c]==null?'':p[c]))];
   const wb=XLSX.utils.book_new();
@@ -846,9 +847,9 @@ async function exportJSON(auto){
 }
 function exportCSV(){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
   const esc=(v)=>{v=(v==null?'':String(v)); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
   const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(p[c])).join(';')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
