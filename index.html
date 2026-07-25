@@ -434,7 +434,12 @@ async function verifyChallenge(){
     await onLoggedIn();
   } finally { btn.disabled=false; if(loginStep==='mfa') btn.textContent='Confirmar'; }
 }
-async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+async function doLogout(){
+  if(confirm('Deseja fazer um backup antes de sair?')){
+    try{ await exportJSON(); }catch(e){}
+  }
+  await sb.auth.signOut(); location.reload();
+}
 async function onLoggedIn(){
   const {data:{user}}=await sb.auth.getUser();
   document.getElementById('hsub').textContent = 'Nuvem · ' + (user?user.email:'');
