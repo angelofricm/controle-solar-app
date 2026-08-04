@@ -169,6 +169,7 @@
   <button class="btn btn-ghost" onclick="atualizar()">⟳ Atualizar</button>
   <button class="btn btn-ghost" onclick="exportCSV()">Exportar Excel</button>
   <button class="btn btn-ghost" onclick="exportJSON()">Backup</button>
+  <button class="btn btn-ghost" onclick="alterarSenha()">🔑 Senha</button>
   <button class="btn btn-ghost" onclick="doLogout()">Sair</button>
 </header>
 
@@ -440,6 +441,17 @@ async function verifyChallenge(){
     if(e2){ lgMsg('Código incorreto. Tente o código atual do app.'); return; }
     await onLoggedIn();
   } finally { btn.disabled=false; if(loginStep==='mfa') btn.textContent='Confirmar'; }
+}
+async function alterarSenha(){
+  const nova=prompt('Digite a NOVA senha que você quer usar (mínimo 6 caracteres):');
+  if(nova===null) return;
+  if((nova||'').length<6){ alert('A senha precisa ter ao menos 6 caracteres.'); return; }
+  const conf=prompt('Digite a senha novamente para confirmar:');
+  if(conf===null) return;
+  if(conf!==nova){ alert('As senhas não são iguais. Tente de novo.'); return; }
+  const {error}=await sb.auth.updateUser({password:nova});
+  if(error){ alert('Não foi possível alterar: '+error.message); return; }
+  alert('Senha alterada com sucesso! Use a nova senha no próximo login.\n\nAnote em um lugar seguro — por segurança, ninguém (nem eu) tem acesso à sua senha.');
 }
 async function doLogout(){
   if(confirm('Deseja fazer um backup antes de sair?')){
