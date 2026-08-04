@@ -239,6 +239,8 @@
   </div>
 
   <div id="v-dashboard" class="hide">
+    <div class="sec-title">💡 Estudo — média cobrada por placa (módulo)</div>
+    <div class="card" style="padding:16px 18px;margin-bottom:18px"><div id="dashPlaca"></div></div>
     <div class="kpis" id="dashCards" style="margin-bottom:18px"></div>
     <div class="sec-title">Projetos por empresa</div>
     <div class="card" style="padding:14px 18px"><div id="dashProj"></div></div>
@@ -264,10 +266,11 @@
         <div class="field full"><label>Cliente</label><input id="f-cliente"></div>
         <div class="field"><label>Categoria</label><select id="f-categoria"></select></div>
         <div class="field"><label>Tipo de serviço</label><select id="f-tipo"></select></div>
-        <div class="field"><label>ID Projeto</label><input id="f-idProjeto"></div>
         <div class="field"><label>Instalação</label><input id="f-instalacao"></div>
         <div class="field"><label>CPF</label><input id="f-cpf"></div>
-        <div class="field"><label>Mês</label><input id="f-mes" placeholder="ex.: OUT_25"></div>
+        <div class="field"><label>Mês</label><select id="f-mes"></select></div>
+        <div class="field"><label>Empresa</label><input id="f-empresa" list="empresas-modal">
+          <datalist id="empresas-modal"></datalist></div>
       </div>
       <div class="grid3" style="margin-top:12px">
         <div class="field"><label>Valor (R$)</label><input id="f-valor" type="number" step="1"></div>
@@ -279,11 +282,8 @@
         <div class="field"><label>Faturado em</label><input id="f-faturado" type="date"></div>
         <div class="field"><label>Status</label><select id="f-status"></select></div>
         <div class="field"><label>Situação</label><select id="f-situacao"></select></div>
-        <div class="field"><label>Empresa</label><input id="f-empresa" list="empresas-modal">
-          <datalist id="empresas-modal"></datalist></div>
         <div class="field"><label>Nº Protocolo</label><input id="f-protocolo"></div>
         <div class="field"><label>Parecer de Acesso</label><input id="f-parecerAcesso"></div>
-        <div class="field"><label>NT Vistoria</label><input id="f-ntVistoria"></div>
       </div>
       <div class="field full" style="margin-top:12px"><label>Observação</label>
         <textarea id="f-obs" rows="2"></textarea></div>
@@ -317,6 +317,11 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
   'Em Obras','Inversão de Fluxo','Enviar Novo Projeto','Vistoria/Concluído','Concluído','Cancelado'];
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
+const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+function mesMonth(v){ if(!v) return ''; const m=String(v).toUpperCase().trim().split(/[_\/\- ]/)[0].slice(0,3);
+  return MESES.includes(m) ? m : (MESES.includes(v)?v:''); }
+function mesRel(p){ const m=mesMonth(p.mes)||p.mes||''; const ano=(p.dataEntrada||'').slice(0,4);
+  return m && ano ? m+'/'+ano : m; }   // no relatório mostra MES/ANO
 function empStyle(e){
   if(e==='FR Soluções Elétricas') return 'background:#dbeafe;color:#0c447c';
   if(e==='Pontual Elétrica')      return 'background:#dcfce7;color:#166534';
@@ -661,7 +666,38 @@ function setView(v){
 }
 function empBarColor(e){ if(e==='FR Soluções Elétricas')return '#2563eb';
   if(e==='Pontual Elétrica')return '#16a34a'; if(e==='Nordeste Solar')return '#ea580c'; return '#64748b'; }
+function renderEstudoPlaca(){
+  const el=document.getElementById('dashPlaca');
+  const q=DB.projetos.filter(p=>(p.modulos||0)>0 && (p.valor||0)>0);
+  if(!q.length){ el.innerHTML='<div class="muted">Sem dados suficientes (precisa de projetos com valor e nº de módulos preenchidos).</div>'; return; }
+  const somaV=q.reduce((s,p)=>s+p.valor,0), somaM=q.reduce((s,p)=>s+p.modulos,0);
+  const medioPond=somaV/somaM;
+  const rates=q.map(p=>p.valor/p.modulos).sort((a,b)=>a-b);
+  const mediana=rates[Math.floor(rates.length/2)], min=rates[0], max=rates[rates.length-1];
+  const m0=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
+  const byE={};
+  q.forEach(p=>{ const e=p.empresa||'(sem empresa)'; if(!byE[e])byE[e]={v:0,m:0,n:0}; byE[e].v+=p.valor; byE[e].m+=p.modulos; byE[e].n++; });
+  const linhasEmp=Object.keys(byE).sort((a,b)=>byE[b].m-byE[a].m).map(e=>
+    `<div class="bar-row" style="grid-template-columns:160px 1fr 90px"><div><span class="chip" style="${empStyle(e)}">${e}</span></div>
+      <div class="muted" style="font-size:12px">${byE[e].n} projeto(s) · ${byE[e].m} placas</div>
+      <div class="right"><b>${m0(byE[e].v/byE[e].m)}</b></div></div>`).join('');
+  const ref=Math.round(medioPond/10)*10;
+  el.innerHTML=`
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <div style="font-size:30px;font-weight:800;color:var(--blue-d)">${m0(medioPond)}</div>
+      <div class="muted">por placa — sua média geral cobrada</div>
+    </div>
+    <div class="muted" style="font-size:12.5px;margin:6px 0 12px">
+      Base: ${q.length} projetos · ${somaM.toLocaleString('pt-BR')} placas · varia de ${m0(min)} a ${m0(max)} por placa · mediana ${m0(mediana)}.
+    </div>
+    <div style="font-weight:600;color:var(--blue-d);margin-bottom:4px">Por empresa</div>
+    ${linhasEmp}
+    <div style="margin-top:12px;padding:10px 12px;background:var(--blue-l);border-radius:8px;font-size:13px;color:var(--blue-d)">
+      💬 <b>Referência para orçar:</b> use <b>${m0(ref)}/placa</b> como base — ex.: 12 placas ≈ <b>${m0(ref*12)}</b>, 40 placas ≈ <b>${m0(ref*40)}</b>. Ajuste por distância, estrutura e negociação.
+    </div>`;
+}
 function renderDashboard(){
+  renderEstudoPlaca();
   const stat={};
   const add=(e)=>{ e=e||'(sem empresa)'; if(!stat[e]) stat[e]={n:0,valor:0,pot:0,rec:0,and:0,conc:0}; return stat[e]; };
   DB.projetos.forEach(p=>{ const s=add(p.empresa); s.n++; s.valor+=(p.valor||0); s.pot+=(p.potencia||0);
@@ -704,9 +740,10 @@ function openEdit(id){
   document.getElementById('fatBtn').style.display = p?'inline-flex':'none';
   const g=(k)=>p?(p[k]??''):'';
   document.getElementById('f-id').value = p?p.id:'';
-  ['cliente','idProjeto','instalacao','cpf','mes','valor','potencia','modulos',
-   'dataEntrada','dataEnvio','dataVistoria','faturado','empresa','protocolo','parecerAcesso','ntVistoria','obs']
+  ['cliente','instalacao','cpf','valor','potencia','modulos',
+   'dataEntrada','dataEnvio','dataVistoria','faturado','empresa','protocolo','parecerAcesso','obs']
     .forEach(k=>document.getElementById('f-'+k).value = g(k)==null?'':(''+g(k)).slice(0, k.startsWith('data')||k==='faturado'?10:9999));
+  fillSelect('f-mes', MESES, mesMonth(g('mes')));
   fillSelect('f-categoria',['Projeto Principal','Outro Serviço'], p?p.categoria:'Projeto Principal');
   fillSelect('f-tipo',optsList('tipo',BASE_TIPOS), g('tipo'));
   fillSelect('f-status',optsList('status',BASE_STATUS), g('status'));
@@ -723,12 +760,12 @@ async function saveProject(){
   const numv=(k)=>{const v=document.getElementById('f-'+k).value; return v===''?null:parseFloat(v);};
   const obj={
     categoria:document.getElementById('f-categoria').value, cliente:val('cliente'),
-    idProjeto:val('idProjeto'), instalacao:val('instalacao'), cpf:val('cpf'), mes:val('mes'),
+    instalacao:val('instalacao'), cpf:val('cpf'), mes:val('mes'),
     tipo:document.getElementById('f-tipo').value, valor:numv('valor'), potencia:numv('potencia'),
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:document.getElementById('f-status').value,
     situacao:document.getElementById('f-situacao').value, empresa:val('empresa'),
-    protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), ntVistoria:val('ntVistoria'), obs:val('obs') };
+    protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), obs:val('obs') };
   if(!obj.cliente){ toast('Informe o cliente'); return; }
   const row=toSnake(obj);
   if(!HAS_PARECER) delete row.parecer_acesso;
@@ -822,7 +859,7 @@ function buildXlsx(quando){
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
     'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
-  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=>p[c]==null?'':p[c]))];
+  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='mes'?mesRel(p):(p[c]==null?'':p[c])))];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Projetos');
   return XLSX.write(wb,{type:'array',bookType:'xlsx'});
@@ -867,7 +904,7 @@ function exportCSV(){
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
     'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
   const esc=(v)=>{v=(v==null?'':String(v)); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(p[c])).join(';')));
+  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='mes'?mesRel(p):p[c])).join(';')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   dl(blob,`projetos-solar-${new Date().toISOString().slice(0,10)}.csv`); toast('Arquivo Excel (CSV) baixado');
 }
