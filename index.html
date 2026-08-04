@@ -224,7 +224,7 @@
     <div class="card" style="padding:14px 18px"><div id="barSit"></div></div>
     <div class="sec-title">A receber</div>
     <div class="card"><div style="overflow-x:auto"><table>
-      <thead><tr><th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Valor</th><th class="center">Pagamento</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Valor</th><th class="center">Pagamento</th><th class="center">Ações</th></tr></thead>
       <tbody id="recRows"></tbody></table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 14px;border-top:1px solid var(--line)">
         <input id="nr-cliente" placeholder="Cliente" style="flex:2;min-width:150px">
@@ -633,14 +633,19 @@ function renderPainel(){
       background:${r.pago?'var(--green-b)':'var(--amber-b)'};color:${r.pago?'var(--green-t)':'var(--amber-t)'}">
       <option value="aguardando"${r.pago?'':' selected'}>Aguardando</option>
       <option value="pago"${r.pago?' selected':''}>Pago</option></select>`;
-  document.getElementById('recRows').innerHTML=(rec.length?rec.map(r=>`<tr style="${r.pago?'opacity:.6':''}">
-    <td>${r.cliente}</td><td>${r.tipo||'—'}</td>
+  const clientesProj=new Set(DB.projetos.map(p=>p.cliente).filter(Boolean));
+  document.getElementById('recRows').innerHTML=(rec.length?rec.map(r=>{
+    const orfao = r.cliente && !clientesProj.has(r.cliente);
+    return `<tr style="${r.pago?'opacity:.6':''}">
+    <td>${r.cliente||'—'}${orfao?' <span title="Sem projeto vinculado a este cliente" style="color:#b45309;cursor:help">⚠</span>':''}</td>
+    <td>${r.tipo||'—'}</td>
     <td>${empSel(r)}</td>
     <td class="right">${money(r.valor)}</td>
     <td class="center">${stSel(r)}</td>
-  </tr>`).join('')
-    +`<tr><td></td><td></td><td class="right"><b>TOTAL PENDENTE</b></td><td class="right"><b>${money(pendTotal)}</b></td><td></td></tr>`
-    : `<tr><td colspan="5" class="empty">Nada a receber.</td></tr>`);
+    <td class="center"><button class="btn btn-danger" style="padding:3px 8px;font-size:13px" title="Excluir esta cobrança" onclick="delReceber(${r.id},&quot;${(r.cliente||'').replace(/"/g,'').replace(/'/g,'')}&quot;)">🗑</button></td>
+  </tr>`;}).join('')
+    +`<tr><td></td><td></td><td class="right"><b>TOTAL PENDENTE</b></td><td class="right"><b>${money(pendTotal)}</b></td><td></td><td></td></tr>`
+    : `<tr><td colspan="6" class="empty">Nada a receber.</td></tr>`);
 }
 function setView(v){
   view=v;
@@ -753,6 +758,7 @@ async function delProject(){
   const idv=+document.getElementById('f-id').value;
   if(!idv) return;
   if(!confirm('Excluir este projeto? Esta ação não pode ser desfeita.')) return;
+  await sb.from('receber').delete().eq('projeto_id',idv);   // remove cobrança vinculada (evita órfão no Painel)
   const {error}=await sb.from('projetos').delete().eq('id',idv);
   if(error){ toast('Erro ao excluir: '+error.message); return; }
   await loadData(); closeEdit(); toast('Projeto excluído');
@@ -771,6 +777,13 @@ async function togglePago(id, pago){
   }
   renderKpis(); renderPainel(); if(view==='projetos') render();
   toast(pago?'Pago em '+d2br(d)+' — Faturado atualizado ✔':'Voltou para Aguardando');
+}
+async function delReceber(id, nome){
+  if(!confirm('Excluir a cobrança de "'+(nome||'')+'" da lista A receber?\n\nIsso remove só o lançamento de cobrança (não mexe em projetos).')) return;
+  const {error}=await sb.from('receber').delete().eq('id',id);
+  if(error){ toast('Erro ao excluir: '+error.message); return; }
+  DB.receber=DB.receber.filter(r=>r.id!==id);
+  renderKpis(); renderPainel(); toast('Cobrança excluída');
 }
 async function updateRecEmpresa(id, empresa){
   const {error}=await sb.from('receber').update({empresa:empresa||null}).eq('id',id);
