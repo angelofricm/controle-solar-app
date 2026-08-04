@@ -197,6 +197,7 @@
       <select id="femp" onchange="render()"><option value="">Todas empresas</option></select>
     </div>
     <div class="filter-note" id="fnote"></div>
+    <div id="pcount" style="font-size:12px;color:var(--muted);margin:2px 0 10px"></div>
     <div class="card">
       <div class="tbl-scroll">
         <table>
@@ -566,6 +567,8 @@ function render(){
   });
   rows.sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
   const tb=document.getElementById('rows');
+  document.getElementById('pcount').innerHTML = `Mostrando <b>${rows.length}</b> de <b>${DB.projetos.length}</b> projetos`
+    + (rows.length<DB.projetos.length ? ' — o restante está apenas oculto pelos filtros (não foi apagado).' : '');
   if(!rows.length){ tb.innerHTML=`<tr><td colspan="9" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
   tb.innerHTML=rows.map(p=>`<tr onclick="openEdit(${p.id})">
     <td><b>${p.cliente||'—'}</b>${p.idProjeto?` <span class="muted">#${p.idProjeto}</span>`:''}</td>
