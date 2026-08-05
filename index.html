@@ -220,15 +220,14 @@
   </div>
 
   <div id="v-painel" class="hide">
-    <div class="kpis" id="painelStats" style="margin-bottom:14px"></div>
-    <div style="margin-bottom:16px"><button class="btn" style="background:var(--blue);color:#fff" onclick="exportPainelXlsx()">⤓ Exportar Painel (Excel)</button></div>
     <div class="sec-title">Projetos por status</div>
     <div class="card" style="padding:14px 18px"><div id="barStatus"></div></div>
     <div class="sec-title">Projetos por situação</div>
     <div class="card" style="padding:14px 18px"><div id="barSit"></div></div>
-    <div class="sec-title">A receber</div>
+    <div class="sec-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">A receber
+      <button class="btn" style="background:var(--blue);color:#fff;font-size:12px;padding:6px 12px" onclick="exportReceberXlsx()">⤓ Exportar Excel</button></div>
     <div class="card"><div style="overflow-x:auto"><table>
-      <thead><tr><th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Valor</th><th class="center">Pagamento</th><th class="center">Ações</th></tr></thead>
+      <thead><tr><th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Placas</th><th class="right">kWp</th><th class="right">Valor</th><th class="center">Pagamento</th><th class="center">Ações</th></tr></thead>
       <tbody id="recRows"></tbody></table></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 14px;border-top:1px solid var(--line)">
         <input id="nr-cliente" placeholder="Cliente" style="flex:2;min-width:150px">
@@ -635,18 +634,6 @@ function novoProjetoCliente(nome){
   fillSelect('f-situacao',optsList('situacao',BASE_SIT), 'Aguardando');
 }
 function renderPainel(){
-  const P=DB.projetos;
-  const totPlacas=P.reduce((s,p)=>s+(p.modulos||0),0);
-  const totKwp=P.reduce((s,p)=>s+(p.potencia||0),0);
-  const totValor=P.reduce((s,p)=>s+(p.valor||0),0);
-  const totReceber=(DB.receber||[]).filter(r=>!r.pago).reduce((s,r)=>s+(r.valor||0),0);
-  const nf=v=>v.toLocaleString('pt-BR',{maximumFractionDigits:0});
-  document.getElementById('painelStats').innerHTML=`
-    <div class="kpi"><div class="l">Projetos</div><div class="v">${P.length}</div></div>
-    <div class="kpi"><div class="l">Total de placas</div><div class="v">${nf(totPlacas)}</div></div>
-    <div class="kpi"><div class="l">Potência (kWp)</div><div class="v">${nf(totKwp)}</div></div>
-    <div class="kpi"><div class="l">Valor total</div><div class="v">${money(totValor)}</div></div>
-    <div class="kpi amber"><div class="l">A receber</div><div class="v">${money(totReceber)}</div></div>`;
   const count=(field)=>{const m={};DB.projetos.forEach(p=>{const k=p[field]||'—';m[k]=(m[k]||0)+1;});
     return Object.entries(m).sort((a,b)=>b[1]-a[1]);};
   const bar=(entries)=>{const max=Math.max(1,...entries.map(e=>e[1]));
@@ -668,18 +655,24 @@ function renderPainel(){
       <option value="aguardando"${r.pago?'':' selected'}>Aguardando</option>
       <option value="pago"${r.pago?' selected':''}>Pago</option></select>`;
   const clientesProj=new Set(DB.projetos.map(p=>p.cliente).filter(Boolean));
+  const nf=v=>v.toLocaleString('pt-BR',{maximumFractionDigits:0});
+  let totP=0, totK=0;
+  rec.forEach(r=>{ const pk=recPlacasKwp(r); totP+=(pk.placas||0); totK+=(pk.kwp||0); });
   document.getElementById('recRows').innerHTML=(rec.length?rec.map(r=>{
     const orfao = r.cliente && !clientesProj.has(r.cliente);
+    const pk=recPlacasKwp(r);
     return `<tr style="${r.pago?'opacity:.6':''}">
     <td>${r.cliente||'—'}${orfao?' <span title="Sem projeto vinculado a este cliente" style="color:#b45309;cursor:help">⚠</span>':''}</td>
     <td>${r.tipo||'—'}</td>
     <td>${empSel(r)}</td>
+    <td class="right">${pk.placas==null?'—':nf(pk.placas)}</td>
+    <td class="right">${pk.kwp==null?'—':nf(pk.kwp)}</td>
     <td class="right">${money(r.valor)}</td>
     <td class="center">${stSel(r)}</td>
     <td class="center"><button class="btn btn-danger" style="padding:3px 8px;font-size:13px" title="Excluir esta cobrança" onclick="delReceber(${r.id},&quot;${(r.cliente||'').replace(/"/g,'').replace(/'/g,'')}&quot;)">🗑</button></td>
   </tr>`;}).join('')
-    +`<tr><td></td><td></td><td class="right"><b>TOTAL PENDENTE</b></td><td class="right"><b>${money(pendTotal)}</b></td><td></td><td></td></tr>`
-    : `<tr><td colspan="6" class="empty">Nada a receber.</td></tr>`);
+    +`<tr><td></td><td class="right"><b>TOTAL</b></td><td></td><td class="right"><b>${nf(totP)}</b></td><td class="right"><b>${nf(totK)}</b></td><td class="right"><b>${money(pendTotal)}</b></td><td class="muted" style="font-size:11px">pendente</td><td></td></tr>`
+    : `<tr><td colspan="8" class="empty">Nada a receber.</td></tr>`);
 }
 function setView(v){
   view=v;
@@ -937,29 +930,23 @@ function exportCSV(){
 function dl(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 
-function exportPainelXlsx(){
-  const P=DB.projetos, rec=DB.receber||[];
-  const totPlacas=P.reduce((s,p)=>s+(p.modulos||0),0), totKwp=P.reduce((s,p)=>s+(p.potencia||0),0);
-  const totValor=P.reduce((s,p)=>s+(p.valor||0),0);
-  const recPend=rec.filter(r=>!r.pago), totReceber=recPend.reduce((s,r)=>s+(r.valor||0),0);
-  const cont=(f)=>{const m={};P.forEach(p=>{const k=p[f]||'—';m[k]=(m[k]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]);};
+function recPlacasKwp(r){ const p=r.projetoId?DB.projetos.find(x=>x.id===r.projetoId):null;
+  return { placas:p?(p.modulos||0):null, kwp:p?(p.potencia||0):null }; }
+function exportReceberXlsx(){
+  const rec=(DB.receber||[]).slice().sort((a,b)=>(a.pago?1:0)-(b.pago?1:0)||(b.valor||0)-(a.valor||0));
+  const head=['Cliente','Tipo','Empresa','Placas','kWp','Valor (R$)','Situação','Pago em'];
+  let tV=0,tP=0,tK=0;
+  const rows=rec.map(r=>{ const pk=recPlacasKwp(r);
+    if(!r.pago) tV+=(r.valor||0); tP+=(pk.placas||0); tK+=(pk.kwp||0);
+    return [r.cliente||'', r.tipo||'', r.empresa||'', pk.placas==null?'':pk.placas, pk.kwp==null?'':pk.kwp,
+            r.valor||0, r.pago?'Pago':'Aguardando', r.dataPagamento?d2br(r.dataPagamento):'']; });
+  const aoa=[['A RECEBER — Controle Solar'],['Gerado em', carimboLegivel()],[], head, ...rows, [],
+    ['','','TOTAIS', tP, tK, tV+' (pendente)','','']];
   const wb=XLSX.utils.book_new();
-  // Resumo
-  const resumo=[['PAINEL — Controle Solar'],['Gerado em', carimboLegivel()],[],
-    ['Projetos', P.length],['Total de placas', totPlacas],['Potência total (kWp)', totKwp],
-    ['Valor total (R$)', totValor],['A receber pendente (R$)', totReceber],[],
-    ['Projetos por status',''],...cont('status'),[],
-    ['Projetos por situação',''],...cont('situacao')];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumo), 'Resumo');
-  // A Receber
-  const arHead=['Cliente','Tipo','Empresa','Valor (R$)','Situação','Pago em'];
-  const ar=[arHead, ...rec.slice().sort((a,b)=>(a.pago?1:0)-(b.pago?1:0)||(b.valor||0)-(a.valor||0))
-    .map(r=>[r.cliente||'',r.tipo||'',r.empresa||'',r.valor||0, r.pago?'Pago':'Aguardando', r.dataPagamento?d2br(r.dataPagamento):''])];
-  ar.push([]); ar.push(['','','TOTAL PENDENTE', totReceber,'','']);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ar), 'A Receber');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'A Receber');
   const blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  dl(blob, `painel-controle-solar-${carimbo()}.xlsx`);
-  toast('Painel exportado para Excel ✔');
+  dl(blob, `a-receber-${carimbo()}.xlsx`);
+  toast('A Receber exportado para Excel ✔');
 }
 
 function refresh(){ renderKpis(); fillFilters(); setView(view); }
