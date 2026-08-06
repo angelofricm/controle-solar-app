@@ -195,6 +195,7 @@
       </div>
       <select id="fsit" onchange="render()"><option value="">Todas situações</option></select>
       <select id="femp" onchange="render()"><option value="">Todas empresas</option></select>
+      <select id="fconc" onchange="render()"><option value="">Todas concessionárias</option></select>
     </div>
     <div class="filter-note" id="fnote"></div>
     <div id="pcount" style="font-size:12px;color:var(--muted);margin:2px 0 10px"></div>
@@ -202,7 +203,7 @@
       <div class="tbl-scroll">
         <table>
           <thead><tr>
-            <th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Valor</th><th class="right">kWp</th>
+            <th>Cliente</th><th>Tipo</th><th>Empresa</th><th>Concess.</th><th class="right">Valor</th><th class="right">kWp</th>
             <th>Entrada</th><th>Status</th><th class="center">Situação</th><th class="center">Fat.</th>
           </tr></thead>
           <tbody id="rows"></tbody>
@@ -224,7 +225,8 @@
     <div class="sec-title">Projetos por situação</div>
     <div class="card" style="padding:14px 18px"><div id="barSit"></div></div>
     <div class="sec-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">A receber
-      <button class="btn" style="background:var(--blue);color:#fff;font-size:12px;padding:6px 12px" onclick="exportReceberXlsx()">⤓ Exportar Excel</button></div>
+      <button class="btn" style="background:var(--blue);color:#fff;font-size:12px;padding:6px 12px" onclick="exportReceberXlsx()">⤓ Exportar Excel</button>
+      <label style="font-size:12px;font-weight:400;display:flex;align-items:center;gap:5px;color:var(--muted)"><input type="checkbox" id="chkPagas" onchange="renderPainel()" style="width:auto;margin:0"> mostrar pagas</label></div>
     <div class="card"><div style="overflow-x:auto"><table>
       <thead><tr><th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Placas</th><th class="right">kWp</th><th class="right">Valor</th><th class="center">Pagamento</th><th class="center">Ações</th></tr></thead>
       <tbody id="recRows"></tbody></table></div>
@@ -240,7 +242,7 @@
   </div>
 
   <div id="v-dashboard" class="hide">
-    <div class="sec-title">💡 Estudo — média cobrada por placa (módulo)</div>
+    <div class="sec-title">💡 Estudo — tabela de valores por potência (kWp)</div>
     <div class="card" style="padding:16px 18px;margin-bottom:18px"><div id="dashPlaca"></div></div>
     <div class="kpis" id="dashCards" style="margin-bottom:18px"></div>
     <div class="sec-title">Projetos por empresa</div>
@@ -271,6 +273,7 @@
         <div class="field"><label>Mês</label><select id="f-mes"></select></div>
         <div class="field"><label>Empresa</label><input id="f-empresa" list="empresas-modal">
           <datalist id="empresas-modal"></datalist></div>
+        <div class="field"><label>Concessionária</label><select id="f-concessionaria"></select></div>
       </div>
       <div class="grid3" style="margin-top:12px">
         <div class="field"><label>Valor (R$)</label><input id="f-valor" type="number" step="1"></div>
@@ -317,6 +320,11 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
+const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
+function precoKwp(kwp){ if(kwp===''||kwp==null) return null; kwp=Number(kwp);
+  for(const [a,b,v] of TABELA_KWP){ if(kwp<=b) return v; }
+  return TABELA_KWP[TABELA_KWP.length-1][2]; }
 function mesMonth(v){ if(!v) return ''; const m=String(v).toUpperCase().trim().split(/[_\/\- ]/)[0].slice(0,3);
   return MESES.includes(m) ? m : (MESES.includes(v)?v:''); }
 function mesRel(p){ const m=mesMonth(p.mes)||p.mes||''; const ano=(p.dataEntrada||'').slice(0,4);
@@ -333,7 +341,7 @@ const FIELDS = [['id','id'],['categoria','categoria'],['mes','mes'],['idProjeto'
   ['cliente','cliente'],['instalacao','instalacao'],['cpf','cpf'],['tipo','tipo'],['valor','valor'],
   ['potencia','potencia'],['modulos','modulos'],['dataEntrada','data_entrada'],['dataEnvio','data_envio'],['protocolo','protocolo'],
   ['dataVistoria','data_vistoria'],['parecerAcesso','parecer_acesso'],['ntVistoria','nt_vistoria'],['status','status'],['situacao','situacao'],
-  ['faturado','faturado'],['empresa','empresa'],['obs','obs']];
+  ['faturado','faturado'],['empresa','empresa'],['concessionaria','concessionaria'],['obs','obs']];
 function toCamel(r){ const o={}; FIELDS.forEach(([c,s])=>o[c]=r[s]); return o; }
 function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) return;
   let v=o[c]; if(v==='') v=null; r[s]=v; }); return r; }
@@ -534,6 +542,7 @@ function fillFilters(){
     el.innerHTML=`<option value="">${ph}</option>`+arr.map(v=>`<option>${v}</option>`).join('');el.value=cur;};
   set('fsit',optsList('situacao',BASE_SIT),'Todas situações');
   set('femp',uniq([...EMPRESAS, ...DB.projetos.map(p=>p.empresa)]),'Todas empresas');
+  set('fconc',uniq([...CONCESSIONARIAS, ...DB.projetos.map(p=>p.concessionaria)]),'Todas concessionárias');
   document.getElementById('empresas-modal').innerHTML =
     uniq([...EMPRESAS, ...DB.projetos.map(p=>p.empresa)]).map(e=>`<option value="${e.replace(/"/g,'&quot;')}">`).join('');
   buildStatusFilter();
@@ -562,6 +571,7 @@ function render(){
   const q=(document.getElementById('q').value||'').toLowerCase();
   const fsi=document.getElementById('fsit').value;
   const fe=document.getElementById('femp').value;
+  const fco=document.getElementById('fconc').value;
   const note=document.getElementById('fnote');
   if(cliFilter){ note.style.display='flex';
     note.innerHTML=`Serviços de <b>&nbsp;${cliFilter}</b>
@@ -574,6 +584,7 @@ function render(){
     if(statusSel.size>0 && !statusSel.has(p.status)) return false;
     if(fsi && p.situacao!==fsi) return false;
     if(fe && p.empresa!==fe) return false;
+    if(fco && p.concessionaria!==fco) return false;
     if(q){ const blob=`${p.cliente} ${p.instalacao} ${p.protocolo} ${p.cpf} ${p.tipo}`.toLowerCase();
       if(!blob.includes(q)) return false; }
     return true;
@@ -582,11 +593,12 @@ function render(){
   const tb=document.getElementById('rows');
   document.getElementById('pcount').innerHTML = `Mostrando <b>${rows.length}</b> de <b>${DB.projetos.length}</b> projetos`
     + (rows.length<DB.projetos.length ? ' — o restante está apenas oculto pelos filtros (não foi apagado).' : '');
-  if(!rows.length){ tb.innerHTML=`<tr><td colspan="9" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="10" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
   tb.innerHTML=rows.map(p=>`<tr onclick="openEdit(${p.id})">
     <td><b>${p.cliente||'—'}</b>${p.idProjeto?` <span class="muted">#${p.idProjeto}</span>`:''}</td>
     <td>${p.tipo||'—'}</td>
     <td>${empChip(p.empresa)}</td>
+    <td>${p.concessionaria||'—'}</td>
     <td class="right">${money(p.valor)}</td>
     <td class="right">${p.potencia!=null?p.potencia.toLocaleString('pt-BR'):'—'}</td>
     <td>${d2br(p.dataEntrada)}</td>
@@ -637,7 +649,10 @@ function renderPainel(){
       <div class="right"><b>${v}</b></div></div>`).join('');};
   document.getElementById('barStatus').innerHTML=bar(count('status'));
   document.getElementById('barSit').innerHTML=bar(count('situacao'));
-  const rec=(DB.receber||[]).slice().sort((a,b)=>(a.pago?1:0)-(b.pago?1:0) || (b.valor||0)-(a.valor||0));
+  const verPagas=document.getElementById('chkPagas')&&document.getElementById('chkPagas').checked;
+  let rec=(DB.receber||[]).slice();
+  if(!verPagas) rec=rec.filter(r=>!r.pago);
+  rec.sort((a,b)=>(a.pago?1:0)-(b.pago?1:0) || (b.valor||0)-(a.valor||0));
   const pendTotal=rec.filter(r=>!r.pago).reduce((s,r)=>s+(r.valor||0),0);
   const emps=uniq([...DB.projetos.map(p=>p.empresa), ...rec.map(r=>r.empresa)])
     .sort((a,b)=>a.localeCompare(b,'pt-BR'));
@@ -682,34 +697,33 @@ function empBarColor(e){ if(e==='FR Soluções Elétricas')return '#2563eb';
   if(e==='Pontual Elétrica')return '#16a34a'; if(e==='Nordeste Solar')return '#ea580c'; return '#64748b'; }
 function renderEstudoPlaca(){
   const el=document.getElementById('dashPlaca');
-  const q=DB.projetos.filter(p=>(p.modulos||0)>0 && (p.valor||0)>0);
-  if(!q.length){ el.innerHTML='<div class="muted">Sem dados suficientes (precisa de projetos com valor e nº de módulos preenchidos).</div>'; return; }
-  const somaV=q.reduce((s,p)=>s+p.valor,0), somaM=q.reduce((s,p)=>s+p.modulos,0);
-  const medioPond=somaV/somaM;
-  const rates=q.map(p=>p.valor/p.modulos).sort((a,b)=>a-b);
-  const mediana=rates[Math.floor(rates.length/2)], min=rates[0], max=rates[rates.length-1];
   const m0=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
-  const byE={};
-  q.forEach(p=>{ const e=p.empresa||'(sem empresa)'; if(!byE[e])byE[e]={v:0,m:0,n:0}; byE[e].v+=p.valor; byE[e].m+=p.modulos; byE[e].n++; });
-  const linhasEmp=Object.keys(byE).sort((a,b)=>byE[b].m-byE[a].m).map(e=>
-    `<div class="bar-row" style="grid-template-columns:160px 1fr 90px"><div><span class="chip" style="${empStyle(e)}">${e}</span></div>
-      <div class="muted" style="font-size:12px">${byE[e].n} projeto(s) · ${byE[e].m} placas</div>
-      <div class="right"><b>${m0(byE[e].v/byE[e].m)}</b></div></div>`).join('');
-  const ref=Math.round(medioPond/10)*10;
+  const cont=TABELA_KWP.map(()=>0);
+  DB.projetos.forEach(p=>{ let k=p.potencia; if(k==null||k==='') return; k=Number(k);
+    let idx=TABELA_KWP.findIndex(([a,b])=>k<=b); if(idx<0) idx=TABELA_KWP.length-1; cont[idx]++; });
+  const linhas=TABELA_KWP.map(([a,b,v],i)=>`<tr>
+    <td style="padding:7px 8px;border-top:1px solid var(--line)"><b>${a} a ${b} kWp</b></td>
+    <td style="padding:7px 8px;border-top:1px solid var(--line);text-align:right;color:var(--blue-d);font-weight:700">${m0(v)}</td>
+    <td style="padding:7px 8px;border-top:1px solid var(--line);text-align:center;color:var(--muted)">${cont[i]} projeto(s)</td></tr>`).join('');
   el.innerHTML=`
-    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <div style="font-size:30px;font-weight:800;color:var(--blue-d)">${m0(medioPond)}</div>
-      <div class="muted">por placa — sua média geral cobrada</div>
-    </div>
-    <div class="muted" style="font-size:12.5px;margin:6px 0 12px">
-      Base: ${q.length} projetos · ${somaM.toLocaleString('pt-BR')} placas · varia de ${m0(min)} a ${m0(max)} por placa · mediana ${m0(mediana)}.
-    </div>
-    <div style="font-weight:600;color:var(--blue-d);margin-bottom:4px">Por empresa</div>
-    ${linhasEmp}
-    <div style="margin-top:12px;padding:10px 12px;background:var(--blue-l);border-radius:8px;font-size:13px;color:var(--blue-d)">
-      💬 <b>Referência para orçar:</b> use <b>${m0(ref)}/placa</b> como base — ex.: 12 placas ≈ <b>${m0(ref*12)}</b>, 40 placas ≈ <b>${m0(ref*40)}</b>. Ajuste por distância, estrutura e negociação.
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead><tr>
+        <th style="text-align:left;padding:7px 8px;border-bottom:2px solid var(--blue)">Potência</th>
+        <th style="text-align:right;padding:7px 8px;border-bottom:2px solid var(--blue)">Valor</th>
+        <th style="text-align:center;padding:7px 8px;border-bottom:2px solid var(--blue)">Seus projetos</th></tr></thead>
+      <tbody>${linhas}</tbody></table></div>
+    <div style="margin-top:14px;padding:12px 14px;background:var(--blue-l);border-radius:10px">
+      <div style="font-weight:600;color:var(--blue-d);margin-bottom:8px">🧮 Quanto cobrar? Digite a potência do sistema:</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input id="calcKwp" type="number" step="0.1" placeholder="kWp" style="width:130px" oninput="calcularPreco()">
+        <span style="color:var(--muted)">→ valor de referência:</span>
+        <span id="calcResult" style="font-size:22px;font-weight:800;color:var(--blue-d)">—</span>
+      </div>
     </div>`;
 }
+function calcularPreco(){ const k=document.getElementById('calcKwp').value; const v=precoKwp(k);
+  document.getElementById('calcResult').textContent = (k===''||v==null) ? '—'
+    : v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}); }
 function renderDashboard(){
   renderEstudoPlaca();
   const stat={};
@@ -759,6 +773,7 @@ function openEdit(id){
     .forEach(k=>document.getElementById('f-'+k).value = g(k)==null?'':(''+g(k)).slice(0, k.startsWith('data')||k==='faturado'?10:9999));
   fillSelect('f-mes', MESES, mesMonth(g('mes')));
   fillSelect('f-tipo', BASE_TIPOS, g('tipo'));
+  fillSelect('f-concessionaria', CONCESSIONARIAS, g('concessionaria'));
   fillSelect('f-status',optsList('status',BASE_STATUS), g('status'));
   fillSelect('f-situacao',optsList('situacao',BASE_SIT), g('situacao'));
   const pa=document.getElementById('f-parecerAcesso');
@@ -778,6 +793,7 @@ async function saveProject(){
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:document.getElementById('f-status').value,
     situacao:document.getElementById('f-situacao').value, empresa:val('empresa'),
+    concessionaria:document.getElementById('f-concessionaria').value,
     protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), obs:val('obs') };
   if(!obj.cliente){ toast('Informe o cliente'); return; }
   const row=toSnake(obj);
@@ -868,9 +884,9 @@ const idbSet=(k,v)=>idbReq('readwrite',s=>s.put(v,k));
 
 function buildXlsx(quando){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','concessionaria','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Concessionária','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
   const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(p[c]==null?'':p[c]))))];
   const wb=XLSX.utils.book_new();
@@ -913,9 +929,9 @@ async function exportJSON(auto){
 }
 function exportCSV(){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','concessionaria','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Concessionária','Observação'];
   const esc=(v)=>{v=(v==null?'':String(v)); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
   const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):p[c]))).join(';')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
