@@ -395,7 +395,7 @@ async function submitLogin(){
   try{
     const {error}=await sb.auth.signInWithPassword({email,password:pass});
     if(error){ lgMsg('E-mail ou senha incorretos.'); return; }
-    await gateMFA();
+    await onLoggedIn();
   } finally { btn.disabled=false; if(loginStep==='pass') btn.textContent='Entrar'; }
 }
 async function gateMFA(){
@@ -966,7 +966,7 @@ document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id=
 
 (async function boot(){
   const {data:{session}} = await sb.auth.getSession();
-  if(session) await gateMFA();
+  if(session) await onLoggedIn();
 })();
 </script>
 </body>
