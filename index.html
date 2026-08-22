@@ -1008,7 +1008,7 @@ function exportReceberXlsx(){
 }
 
 function refresh(){ renderKpis(); fillFilters(); setView(view); }
-document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id==='overlay') closeEdit(); });
+/* clicar fora NÃO fecha o cadastro — só fecha em Cancelar, no ✕ ou ao Salvar */
 ['lg-pass','lg-code','lg-ecode'].forEach(id=>
   document.getElementById(id).addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); loginAction(); } }));
 
