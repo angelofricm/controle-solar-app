@@ -536,6 +536,27 @@ async function syncReceberDoProjeto(p){
     if(await ensureReceberForProject(p)){ renderKpis(); if(view==='painel')renderPainel(); }
   }
 }
+/* faturado -> lança em A receber JÁ como PAGO (data do pagamento = data do faturado) */
+async function lancarFaturado(p){
+  if(!p || !p.faturado || (p.valor||0)<=0) return null;
+  let linked=DB.receber.find(r=>r.projetoId===p.id);
+  if(!linked){
+    const {data,error}=await sb.from('receber')
+      .insert({cliente:p.cliente,tipo:p.tipo,empresa:p.empresa||null,valor:p.valor,pago:true,projeto_id:p.id,data_pagamento:p.faturado})
+      .select();
+    if(error){ toast('Erro em A receber: '+error.message); return null; }
+    DB.receber.push({id:data[0].id,cliente:p.cliente,tipo:p.tipo,empresa:p.empresa,valor:p.valor,
+      pago:true,projetoId:p.id,dataPagamento:p.faturado});
+    return 'criado';
+  }
+  if(!linked.pago){
+    const {error}=await sb.from('receber').update({pago:true,data_pagamento:p.faturado}).eq('id',linked.id);
+    if(error){ toast('Erro em A receber: '+error.message); return null; }
+    linked.pago=true; linked.dataPagamento=p.faturado;
+    return 'pago';
+  }
+  return null;
+}
 
 /* ---------- RENDER ---------- */
 function renderKpis(){
@@ -823,6 +844,7 @@ function closeEdit(){ document.getElementById('overlay').classList.remove('open'
 async function saveProject(){
   const idv=document.getElementById('f-id').value;
   const oldValor = idv ? ((DB.projetos.find(x=>x.id===+idv)||{}).valor ?? null) : null;
+  const oldFaturado = idv ? ((DB.projetos.find(x=>x.id===+idv)||{}).faturado || '') : '';
   const val=(k)=>document.getElementById('f-'+k).value.trim();
   const numv=(k)=>{const v=document.getElementById('f-'+k).value; return v===''?null:parseFloat(v);};
   const obj={
@@ -843,15 +865,15 @@ async function saveProject(){
   if(error){ toast('Erro ao salvar: '+error.message); return; }
   await loadData();
   if(isNew){ const np=DB.projetos.find(x=>x.id===novoId);
-    if(await ensureReceberForProject(np)){ refresh(); toast('Projeto adicionado e lançado em A receber'); }
+    if(np.faturado){ if(await lancarFaturado(np)){ refresh(); toast('Projeto adicionado — faturado (pago) em A receber'); } else toast('Projeto adicionado'); }
+    else if(await ensureReceberForProject(np)){ refresh(); toast('Projeto adicionado e lançado em A receber'); }
     else toast('Projeto adicionado'); }
   else { const np=DB.projetos.find(x=>x.id===+idv); let msg='Projeto atualizado';
     if(np){
       if((np.valor||0)!==(oldValor||0)){ await syncReceberDoProjeto(np); msg='Projeto e A receber atualizados ✔'; }
-      // preencheu a data de Faturado e ainda não tem cobrança -> lança em A receber
-      if(np.faturado && (np.valor||0)>0 && !DB.receber.some(r=>r.projetoId===np.id)){
-        if(await ensureReceberForProject(np)){ refresh(); msg='Faturado — lançado em A receber ✔'; }
-      }
+      // preencheu a data de Faturado agora -> lança em A receber JÁ como PAGO
+      if(np.faturado && !oldFaturado){ const r=await lancarFaturado(np);
+        if(r){ refresh(); msg = r==='criado' ? 'Faturado — lançado em A receber como PAGO ✔' : 'Faturado — marcado como PAGO ✔'; } }
     }
     toast(msg); }
   closeEdit();
@@ -866,9 +888,9 @@ async function faturarProjeto(){
   if(error){ toast('Erro ao faturar: '+error.message); return; }
   const p=DB.projetos.find(x=>x.id===idv); if(p) p.faturado=d;
   document.getElementById('f-faturado').value=d;
-  const lancou=await ensureReceberForProject(p);
+  const r=await lancarFaturado(p);
   refresh();
-  toast(lancou?'Faturado + lançado em A receber ✔':'Faturado ✔ (já estava em A receber)');
+  toast(r?'Faturado — pago em A receber ✔':'Faturado ✔');
 }
 async function delProject(){
   const idv=+document.getElementById('f-id').value;
