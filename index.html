@@ -153,6 +153,7 @@
     <div class="lg-actions">
       <button class="btn" id="lg-btn" onclick="loginAction()">Entrar</button>
     </div>
+    <div id="lg-versao" style="text-align:center;font-size:11px;color:var(--muted);margin-top:14px"></div>
   </div>
 </div>
 
@@ -322,6 +323,8 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+const APP_VERSION = '22/08/2026 · 11h30';   // <-- muda a cada atualização
+{ const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
 function precoKwp(kwp){ if(kwp===''||kwp==null) return null; kwp=Number(kwp);
