@@ -541,16 +541,17 @@ async function lancarFaturado(p){
   if(!p || !p.faturado || (p.valor||0)<=0) return null;
   let linked=DB.receber.find(r=>r.projetoId===p.id);
   if(!linked){
-    const {data,error}=await sb.from('receber')
-      .insert({cliente:p.cliente,tipo:p.tipo,empresa:p.empresa||null,valor:p.valor,pago:true,projeto_id:p.id,data_pagamento:p.faturado})
-      .select();
+    const base={cliente:p.cliente,tipo:p.tipo,empresa:p.empresa||null,valor:p.valor,pago:true,projeto_id:p.id};
+    let {data,error}=await sb.from('receber').insert({...base,data_pagamento:p.faturado}).select();
+    if(error){ ({data,error}=await sb.from('receber').insert(base).select()); }   // fallback sem data_pagamento
     if(error){ toast('Erro em A receber: '+error.message); return null; }
     DB.receber.push({id:data[0].id,cliente:p.cliente,tipo:p.tipo,empresa:p.empresa,valor:p.valor,
       pago:true,projetoId:p.id,dataPagamento:p.faturado});
     return 'criado';
   }
   if(!linked.pago){
-    const {error}=await sb.from('receber').update({pago:true,data_pagamento:p.faturado}).eq('id',linked.id);
+    let {error}=await sb.from('receber').update({pago:true,data_pagamento:p.faturado}).eq('id',linked.id);
+    if(error){ ({error}=await sb.from('receber').update({pago:true}).eq('id',linked.id)); }   // fallback
     if(error){ toast('Erro em A receber: '+error.message); return null; }
     linked.pago=true; linked.dataPagamento=p.faturado;
     return 'pago';
@@ -871,8 +872,8 @@ async function saveProject(){
   else { const np=DB.projetos.find(x=>x.id===+idv); let msg='Projeto atualizado';
     if(np){
       if((np.valor||0)!==(oldValor||0)){ await syncReceberDoProjeto(np); msg='Projeto e A receber atualizados ✔'; }
-      // preencheu a data de Faturado agora -> lança em A receber JÁ como PAGO
-      if(np.faturado && !oldFaturado){ const r=await lancarFaturado(np);
+      // tem data de Faturado -> garante o lançamento em A receber JÁ como PAGO
+      if(np.faturado){ const r=await lancarFaturado(np);
         if(r){ refresh(); msg = r==='criado' ? 'Faturado — lançado em A receber como PAGO ✔' : 'Faturado — marcado como PAGO ✔'; } }
     }
     toast(msg); }
