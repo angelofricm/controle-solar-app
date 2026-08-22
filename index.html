@@ -845,9 +845,15 @@ async function saveProject(){
   if(isNew){ const np=DB.projetos.find(x=>x.id===novoId);
     if(await ensureReceberForProject(np)){ refresh(); toast('Projeto adicionado e lançado em A receber'); }
     else toast('Projeto adicionado'); }
-  else { const np=DB.projetos.find(x=>x.id===+idv);
-    if(np && (np.valor||0)!==(oldValor||0)){ await syncReceberDoProjeto(np); toast('Projeto e A receber atualizados ✔'); }
-    else toast('Projeto atualizado'); }
+  else { const np=DB.projetos.find(x=>x.id===+idv); let msg='Projeto atualizado';
+    if(np){
+      if((np.valor||0)!==(oldValor||0)){ await syncReceberDoProjeto(np); msg='Projeto e A receber atualizados ✔'; }
+      // preencheu a data de Faturado e ainda não tem cobrança -> lança em A receber
+      if(np.faturado && (np.valor||0)>0 && !DB.receber.some(r=>r.projetoId===np.id)){
+        if(await ensureReceberForProject(np)){ refresh(); msg='Faturado — lançado em A receber ✔'; }
+      }
+    }
+    toast(msg); }
   closeEdit();
 }
 
