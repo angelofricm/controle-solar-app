@@ -228,7 +228,7 @@
     <div class="sec-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">A receber
       <button class="btn" style="background:var(--blue);color:#fff;font-size:12px;padding:6px 12px" onclick="exportReceberXlsx()">⤓ Exportar Excel</button>
       <label style="font-size:12px;font-weight:400;display:flex;align-items:center;gap:5px;color:var(--muted)"><input type="checkbox" id="chkPagas" onchange="renderPainel()" style="width:auto;margin:0"> mostrar pagas</label>
-      <button class="btn btn-line" style="font-size:12px;padding:6px 12px;margin-left:auto" onclick="backfillFaturados()" title="Gera as cobranças (pagas) de todos os projetos que já têm data de faturado">⚙ Gerar cobranças dos faturados</button></div>
+      <button class="btn btn-line" style="font-size:12px;padding:6px 12px;margin-left:auto" onclick="backfillFaturados()" title="Verifica todos os projetos com valor e gera as cobranças que faltam (faturado=pago, não faturado=aguardando)">⚙ Gerar cobranças que faltam</button></div>
     <div id="divergencias" style="margin-bottom:12px"></div>
     <div class="card"><div style="overflow-x:auto"><table>
       <thead><tr><th>Cliente</th><th>Tipo</th><th>Empresa</th><th class="right">Placas</th><th class="right">kWp</th><th class="right">Valor</th><th class="center">Pagamento</th><th class="center">Ações</th></tr></thead>
@@ -323,7 +323,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '22/08/2026 · 11h30';   // <-- muda a cada atualização
+const APP_VERSION = '22/08/2026 · 12h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -540,26 +540,37 @@ async function syncReceberDoProjeto(p){
     if(await ensureReceberForProject(p)){ renderKpis(); if(view==='painel')renderPainel(); }
   }
 }
-/* rotina única: gera as cobranças (pagas) de TODOS os projetos já faturados */
+/* garante a cobrança certa de um projeto: faturado -> paga; não faturado -> aguardando */
+async function garantirCobranca(p){
+  if(!p || (p.valor||0)<=0) return null;
+  if(p.faturado){
+    const r=await lancarFaturado(p);
+    return r==='criado' ? 'Faturado — lançado em A receber (pago) ✔'
+         : r==='pago'   ? 'Faturado — marcado como pago ✔' : null;
+  }
+  if(!DB.receber.some(r=>r.projetoId===p.id)){
+    if(await ensureReceberForProject(p)) return 'Lançado em A receber ✔';
+  }
+  return null;
+}
+/* rotina única: garante a cobrança de TODOS os projetos com valor (aguardando ou pago) */
 async function backfillFaturados(){
-  const alvo=DB.projetos.filter(p=>p.faturado && (p.valor||0)>0);
-  if(!alvo.length){ toast('Nenhum projeto faturado com valor.'); return; }
-  if(!confirm('Gerar/atualizar as cobranças (como PAGAS) dos '+alvo.length+' projetos que já têm data de Faturado?\n\nPode levar alguns segundos. Rodar de novo depois não duplica nada.')) return;
+  const alvo=DB.projetos.filter(p=>(p.valor||0)>0);
+  if(!alvo.length){ toast('Nenhum projeto com valor.'); return; }
+  if(!confirm('Verificar TODOS os '+alvo.length+' projetos com valor e gerar as cobranças que faltam em A Receber?\n\n• Faturados entram como PAGO\n• Não faturados entram como AGUARDANDO\n\nPode levar alguns segundos. Rodar de novo não duplica nada.')) return;
   const btns=document.querySelectorAll('button'); btns.forEach(b=>b.disabled=true);
-  let criados=0, marcados=0, i=0;
+  let mudou=0, i=0;
   for(const p of alvo){
     i++;
     if(i%15===0) toast('Processando… '+i+'/'+alvo.length);
-    const r=await lancarFaturado(p);
-    if(r==='criado') criados++; else if(r==='pago') marcados++;
+    if(await garantirCobranca(p)) mudou++;
   }
   btns.forEach(b=>b.disabled=false);
   await loadData(); refresh();
   alert('Rotina concluída! ✔\n\n'
-    + criados+' cobrança(s) criada(s) como paga\n'
-    + marcados+' cobrança(s) marcada(s) como paga\n'
-    + (alvo.length-criados-marcados)+' já estavam corretas\n\n'
-    + 'Total de projetos faturados: '+alvo.length);
+    + mudou+' cobrança(s) criada(s)/ajustada(s)\n'
+    + (alvo.length-mudou)+' já estavam corretas\n\n'
+    + 'Total de projetos com valor: '+alvo.length);
 }
 /* faturado -> lança em A receber JÁ como PAGO (data do pagamento = data do faturado) */
 async function lancarFaturado(p){
@@ -897,9 +908,8 @@ async function saveProject(){
   else { const np=DB.projetos.find(x=>x.id===+idv); let msg='Projeto atualizado';
     if(np){
       if((np.valor||0)!==(oldValor||0)){ await syncReceberDoProjeto(np); msg='Projeto e A receber atualizados ✔'; }
-      // tem data de Faturado -> garante o lançamento em A receber JÁ como PAGO
-      if(np.faturado){ const r=await lancarFaturado(np);
-        if(r){ refresh(); msg = r==='criado' ? 'Faturado — lançado em A receber como PAGO ✔' : 'Faturado — marcado como PAGO ✔'; } }
+      // garante a cobrança certa: faturado -> pago; não faturado -> aguardando
+      const g=await garantirCobranca(np); if(g){ refresh(); msg=g; }
     }
     toast(msg); }
   closeEdit();
