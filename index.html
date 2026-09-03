@@ -174,6 +174,7 @@
   <button class="btn btn-ghost" onclick="doLogout()">Sair</button>
 </header>
 
+<div id="offlineBar" style="display:none;background:#fef3c7;color:#92400e;text-align:center;padding:8px 14px;font-size:13px;font-weight:600"></div>
 <div class="wrap">
   <div class="kpis" id="kpis"></div>
 
@@ -323,7 +324,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '22/08/2026 · 13h';   // <-- muda a cada atualização
+const APP_VERSION = '22/08/2026 · 14h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -496,16 +497,34 @@ function resetIdle(){
   document.addEventListener(ev, resetIdle, {passive:true}));
 
 /* ---------- DATA ---------- */
+function salvarCache(){ try{ localStorage.setItem('cs_cache', JSON.stringify({projetos:DB.projetos, receber:DB.receber, em:Date.now()})); }catch(e){} }
+function lerCache(){ try{ return JSON.parse(localStorage.getItem('cs_cache')); }catch(e){ return null; } }
+function setOffline(off, em){
+  const bar=document.getElementById('offlineBar'); if(!bar) return;
+  if(off){ bar.style.display='block';
+    bar.innerHTML='⚠ Sem internet — mostrando os últimos dados salvos'
+      + (em?' ('+new Date(em).toLocaleString('pt-BR')+')':'')
+      + '. As alterações só serão salvas quando reconectar.';
+  } else bar.style.display='none';
+}
 async function loadData(){
-  const [{data:proj,error:e1},{data:rec,error:e2}] = await Promise.all([
-    sb.from('projetos').select('*'),
-    sb.from('receber').select('*')
-  ]);
-  if(e1){ toast('Erro ao carregar: '+e1.message); return; }
+  let proj=null, rec=null, e1=null;
+  try{
+    const r = await Promise.all([ sb.from('projetos').select('*'), sb.from('receber').select('*') ]);
+    proj=r[0].data; e1=r[0].error; rec=r[1].data;
+  }catch(err){ e1=err; }
+  if(e1 || !proj){                         // sem conexão -> usa o cache local
+    const c=lerCache();
+    if(c){ DB.projetos=c.projetos||[]; DB.receber=c.receber||[]; setOffline(true,c.em); refresh(); }
+    else { setOffline(true,null); toast('Sem internet e sem dados salvos neste aparelho.'); }
+    return;
+  }
   if(proj && proj.length) HAS_PARECER = ('parecer_acesso' in proj[0]);
   DB.projetos = (proj||[]).map(toCamel);
   DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,
     pago:r.pago,projetoId:r.projeto_id,dataPagamento:r.data_pagamento}));
+  salvarCache();
+  setOffline(false);
   refresh();
 }
 function hoje(){ return new Date().toISOString().slice(0,10); }
@@ -628,7 +647,7 @@ function fillFilters(){
 }
 
 /* filtro de Status com seleção múltipla (padrão: só "Projeto Enviado") */
-const STATUS_PADRAO = ['Aguardando','Enviar Novo Projeto','Projeto Enviado'];
+const STATUS_PADRAO = ['Aguardando','Enviar Novo Projeto','Projeto Enviado','Vistoria/Concluído'];
 let statusSel = new Set(STATUS_PADRAO);
 function buildStatusFilter(){
   const opts=optsList('status',BASE_STATUS);
