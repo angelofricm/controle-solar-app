@@ -325,7 +325,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '20/09/2026 · 10h';   // <-- muda a cada atualização
+const APP_VERSION = '28/09/2026 · 09h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -1102,7 +1102,19 @@ async function importarSistema(){
   try{
     try{ dir=await idbGet('dir_import'); }catch(e){}
     if(dir){ let p=await dir.queryPermission({mode:'read'}); if(p!=='granted') p=await dir.requestPermission({mode:'read'}); if(p!=='granted') dir=null; }
-    if(!dir){ dir=await window.showDirectoryPicker({mode:'read', id:'sistema-preenchimento'}); await idbSet('dir_import', dir); }
+    // mostra a pasta guardada e deixa trocar (evita ficar preso numa pasta de cliente só)
+    if(dir){
+      const usar = confirm('Vou importar desta pasta:\n\n📁 '+dir.name
+        +'\n\n[OK] usar esta pasta\n[Cancelar] escolher OUTRA pasta');
+      if(!usar) dir=null;
+    }
+    if(!dir){
+      alert('Escolha a pasta RAIZ dos projetos:\n\n📁 01 - Prestação de Serviços\n\n'
+        +'(é a pasta que tem dentro dela: Empresa › Concessionária › Cliente)\n\n'
+        +'⚠️ NÃO escolha a pasta de um cliente só — senão ele importa só aquele.');
+      dir=await window.showDirectoryPicker({mode:'read', id:'sistema-preenchimento'});
+      await idbSet('dir_import', dir);
+    }
   }catch(e){ if(e && e.name==='AbortError') return; toast('Erro ao abrir a pasta: '+e.message); return; }
   toast('Lendo projetos do Sistema de Preenchimento…');
   const achados=[]; try{ await scanDir(dir, achados, 0); }catch(e){ toast('Erro ao ler: '+e.message); return; }
