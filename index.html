@@ -215,7 +215,7 @@
         <table>
           <thead><tr>
             <th>Cliente</th><th>Tipo</th><th>Empresa</th><th>Concess.</th><th class="right">Valor</th><th class="right">kWp</th>
-            <th>Entrada</th><th>Status</th><th class="center">Vencimento</th><th class="center">Situação</th><th class="center">Fat.</th>
+            <th>Entrada</th><th>Status</th><th class="center">Vencimento</th><th class="center">Situação</th><th class="center">RC</th><th class="center">Fat.</th>
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
@@ -298,6 +298,9 @@
         <div class="field"><label>Data Projeto Aprovado</label><input id="f-dataProjAprovado" type="date" onchange="atualizaVenc()"></div>
         <div class="field"><label>Vencimento (120 dias)</label><input id="f-vencimento" readonly style="background:#f1f5f9" placeholder="—"></div>
         <div class="field"><label>Faturado em</label><input id="f-faturado" type="date"></div>
+        <div class="field"><label>RC</label>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">
+            <input type="checkbox" id="f-rc" style="width:18px;height:18px"> Tem RC</label></div>
         <div class="field"><label>Status</label><select id="f-status" onchange="onStatusChange()"></select></div>
         <div class="field"><label>Situação</label><select id="f-situacao"></select></div>
         <div class="field"><label>Nº Protocolo</label><input id="f-protocolo"></div>
@@ -335,7 +338,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '03/10/2026 · 15h';   // <-- muda a cada atualização
+const APP_VERSION = '03/10/2026 · 16h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -358,7 +361,7 @@ const FIELDS = [['id','id'],['categoria','categoria'],['mes','mes'],['idProjeto'
   ['cliente','cliente'],['instalacao','instalacao'],['cpf','cpf'],['tipo','tipo'],['valor','valor'],
   ['potencia','potencia'],['modulos','modulos'],['dataEntrada','data_entrada'],['dataEnvio','data_envio'],['protocolo','protocolo'],
   ['dataVistoria','data_vistoria'],['parecerAcesso','parecer_acesso'],['ntVistoria','nt_vistoria'],['status','status'],['situacao','situacao'],
-  ['dataProjAprovado','data_projeto_aprovado'],
+  ['dataProjAprovado','data_projeto_aprovado'],['rc','rc'],
   ['faturado','faturado'],['empresa','empresa'],['concessionaria','concessionaria'],['obs','obs']];
 function toCamel(r){ const o={}; FIELDS.forEach(([c,s])=>o[c]=r[s]); return o; }
 function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) return;
@@ -368,6 +371,7 @@ let DB = {projetos:[], receber:[]};
 let view = 'projetos';
 let HAS_PARECER = true;  // vira false se a coluna parecer_acesso ainda nao existir no banco
 let HAS_APROV = true;    // vira false se a coluna data_projeto_aprovado ainda nao existir no banco
+let HAS_RC = true;       // vira false se a coluna rc ainda nao existir no banco
 const PRAZO_VENC_DIAS = 120;   // vencimento do projeto = Data do Projeto Aprovado + 120 dias
 function vencimentoDe(dataAprov){ if(!dataAprov) return ''; const s=String(dataAprov).slice(0,10);
   const d=new Date(s+'T00:00:00'); if(isNaN(d)) return ''; d.setDate(d.getDate()+PRAZO_VENC_DIAS);
@@ -546,7 +550,7 @@ async function loadData(){
     else { setOffline(true,null); toast('Sem internet e sem dados salvos neste aparelho.'); }
     return;
   }
-  if(proj && proj.length){ HAS_PARECER = ('parecer_acesso' in proj[0]); HAS_APROV = ('data_projeto_aprovado' in proj[0]); }
+  if(proj && proj.length){ HAS_PARECER = ('parecer_acesso' in proj[0]); HAS_APROV = ('data_projeto_aprovado' in proj[0]); HAS_RC = ('rc' in proj[0]); }
   DB.projetos = (proj||[]).map(toCamel);
   DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,
     pago:r.pago,projetoId:r.projeto_id,dataPagamento:r.data_pagamento}));
@@ -722,7 +726,7 @@ function render(){
   const tb=document.getElementById('rows');
   document.getElementById('pcount').innerHTML = `Mostrando <b>${rows.length}</b> de <b>${DB.projetos.length}</b> projetos`
     + (rows.length<DB.projetos.length ? ' — o restante está apenas oculto pelos filtros (não foi apagado).' : '');
-  if(!rows.length){ tb.innerHTML=`<tr><td colspan="11" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="12" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
   tb.innerHTML=rows.map(p=>`<tr onclick="openEdit(${p.id})">
     <td><b>${p.cliente||'—'}</b>${p.idProjeto?` <span class="muted">#${p.idProjeto}</span>`:''}</td>
     <td>${p.tipo||'—'}</td>
@@ -734,6 +738,7 @@ function render(){
     <td>${p.status?`<span class="chip blue">${p.status}</span>`:'—'}</td>
     <td class="center">${vencCell(p)}</td>
     <td class="center">${p.situacao?`<span class="chip ${sitClass(p.situacao)}">${p.situacao}</span>`:'—'}</td>
+    <td class="center"><input type="checkbox" ${p.rc?'checked':''} onclick="event.stopPropagation()" onchange="toggleRC(${p.id},this.checked)" title="Marcar quando tiver RC" style="width:18px;height:18px;cursor:pointer"></td>
     <td class="center">${p.faturado?'✅':'—'}</td>
   </tr>`).join('');
 }
@@ -934,6 +939,8 @@ function openEdit(id){
   atualizaVenc();
   const ap=document.getElementById('f-dataProjAprovado');
   ap.disabled=!HAS_APROV; ap.title=HAS_APROV?'':'(será liberado após atualização do banco)';
+  const rc=document.getElementById('f-rc');
+  rc.checked = p?!!p.rc:false; rc.disabled=!HAS_RC; rc.title=HAS_RC?'':'(será liberado após atualização do banco)';
   fillSelect('f-mes', MESES, mesMonth(g('mes')));
   fillSelect('f-tipo', BASE_TIPOS, g('tipo'));
   fillSelect('f-concessionaria', CONCESSIONARIAS, g('concessionaria'));
@@ -965,7 +972,7 @@ async function saveProject(){
     tipo:document.getElementById('f-tipo').value, valor:numv('valor'), potencia:numv('potencia'),
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:document.getElementById('f-status').value,
-    dataProjAprovado:val('dataProjAprovado'),
+    dataProjAprovado:val('dataProjAprovado'), rc:document.getElementById('f-rc').checked,
     situacao:document.getElementById('f-situacao').value, empresa:val('empresa'),
     concessionaria:document.getElementById('f-concessionaria').value,
     protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), obs:val('obs') };
@@ -973,6 +980,7 @@ async function saveProject(){
   const row=toSnake(obj);
   if(!HAS_PARECER) delete row.parecer_acesso;
   if(!HAS_APROV) delete row.data_projeto_aprovado;
+  if(!HAS_RC) delete row.rc;
   const isNew=!idv; let novoId=null, error;
   if(idv){ row.id=+idv; ({error}=await sb.from('projetos').update(row).eq('id',+idv)); }
   else { novoId=nextId(); row.id=novoId; ({error}=await sb.from('projetos').insert(row)); }
@@ -1016,6 +1024,14 @@ async function delProject(){
 }
 
 /* ---------- A RECEBER ---------- */
+async function toggleRC(id, marcado){
+  if(!HAS_RC){ alert('O campo RC ainda não foi liberado no banco.\n\nRode uma vez no SQL Editor do Supabase:\n\nalter table public.projetos add column if not exists rc boolean default false;');
+    render(); return; }
+  const {error}=await sb.from('projetos').update({rc:marcado}).eq('id',id);
+  if(error){ toast('Erro ao salvar RC: '+error.message); render(); return; }
+  const p=DB.projetos.find(x=>x.id===id); if(p) p.rc=marcado;
+  salvarCache(); toast(marcado?'RC marcado ✔':'RC desmarcado');
+}
 async function togglePago(id, pago){
   const d=pago?hoje():null;
   const {error}=await sb.from('receber').update({pago:pago,data_pagamento:d}).eq('id',id);
@@ -1073,11 +1089,11 @@ const idbSet=(k,v)=>idbReq('readwrite',s=>s.put(v,k));
 
 function buildXlsx(quando){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','dataProjAprovado','vencimento','faturado','empresa','concessionaria','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','dataProjAprovado','vencimento','rc','faturado','empresa','concessionaria','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','Faturado','Empresa','Concessionária','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','RC','Faturado','Empresa','Concessionária','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
-  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):(p[c]==null?'':p[c])))))];
+  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):(c==='rc'?(p.rc?'Sim':''):(p[c]==null?'':p[c]))))))];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Projetos');
   return XLSX.write(wb,{type:'array',bookType:'xlsx'});
@@ -1118,11 +1134,11 @@ async function exportJSON(auto){
 }
 function exportCSV(){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','dataProjAprovado','vencimento','faturado','empresa','concessionaria','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','dataProjAprovado','vencimento','rc','faturado','empresa','concessionaria','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','Faturado','Empresa','Concessionária','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','RC','Faturado','Empresa','Concessionária','Observação'];
   const esc=(v)=>{v=(v==null?'':String(v)); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):p[c])))).join(';')));
+  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):(c==='rc'?(p.rc?'Sim':''):p[c]))))).join(';')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   dl(blob,`projetos-solar-${new Date().toISOString().slice(0,10)}.csv`); toast('Arquivo Excel (CSV) baixado');
 }
