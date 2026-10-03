@@ -199,6 +199,11 @@
       <select id="fsit" onchange="render()"><option value="">Todas situações</option></select>
       <select id="femp" onchange="render()"><option value="">Todas empresas</option></select>
       <select id="fconc" onchange="render()"><option value="">Todas concessionárias</option></select>
+      <select id="ffat" onchange="render()" title="Filtrar por faturamento">
+        <option value="">Faturamento: todos</option>
+        <option value="faturados">Faturados ✅</option>
+        <option value="falta">Falta faturar</option>
+      </select>
     </div>
     <div class="filter-note" id="fnote"></div>
     <div id="pcount" style="font-size:12px;color:var(--muted);margin:2px 0 10px"></div>
@@ -207,7 +212,7 @@
         <table>
           <thead><tr>
             <th>Cliente</th><th>Tipo</th><th>Empresa</th><th>Concess.</th><th class="right">Valor</th><th class="right">kWp</th>
-            <th>Entrada</th><th>Status</th><th class="center">Situação</th><th class="center">Fat.</th>
+            <th>Entrada</th><th>Status</th><th class="center">Vencimento</th><th class="center">Situação</th><th class="center">Fat.</th>
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
@@ -287,8 +292,10 @@
         <div class="field"><label>Data entrada</label><input id="f-dataEntrada" type="date"></div>
         <div class="field"><label>Data de Envio</label><input id="f-dataEnvio" type="date"></div>
         <div class="field"><label>Data vistoria</label><input id="f-dataVistoria" type="date"></div>
+        <div class="field"><label>Data Projeto Aprovado</label><input id="f-dataProjAprovado" type="date" onchange="atualizaVenc()"></div>
+        <div class="field"><label>Vencimento (120 dias)</label><input id="f-vencimento" readonly style="background:#f1f5f9" placeholder="—"></div>
         <div class="field"><label>Faturado em</label><input id="f-faturado" type="date"></div>
-        <div class="field"><label>Status</label><select id="f-status"></select></div>
+        <div class="field"><label>Status</label><select id="f-status" onchange="onStatusChange()"></select></div>
         <div class="field"><label>Situação</label><select id="f-situacao"></select></div>
         <div class="field"><label>Nº Protocolo</label><input id="f-protocolo"></div>
         <div class="field"><label>Parecer de Acesso</label><input id="f-parecerAcesso"></div>
@@ -325,7 +332,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '28/09/2026 · 09h';   // <-- muda a cada atualização
+const APP_VERSION = '03/10/2026 · 11h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -348,6 +355,7 @@ const FIELDS = [['id','id'],['categoria','categoria'],['mes','mes'],['idProjeto'
   ['cliente','cliente'],['instalacao','instalacao'],['cpf','cpf'],['tipo','tipo'],['valor','valor'],
   ['potencia','potencia'],['modulos','modulos'],['dataEntrada','data_entrada'],['dataEnvio','data_envio'],['protocolo','protocolo'],
   ['dataVistoria','data_vistoria'],['parecerAcesso','parecer_acesso'],['ntVistoria','nt_vistoria'],['status','status'],['situacao','situacao'],
+  ['dataProjAprovado','data_projeto_aprovado'],
   ['faturado','faturado'],['empresa','empresa'],['concessionaria','concessionaria'],['obs','obs']];
 function toCamel(r){ const o={}; FIELDS.forEach(([c,s])=>o[c]=r[s]); return o; }
 function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) return;
@@ -356,6 +364,13 @@ function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) 
 let DB = {projetos:[], receber:[]};
 let view = 'projetos';
 let HAS_PARECER = true;  // vira false se a coluna parecer_acesso ainda nao existir no banco
+let HAS_APROV = true;    // vira false se a coluna data_projeto_aprovado ainda nao existir no banco
+const PRAZO_VENC_DIAS = 120;   // vencimento do projeto = Data do Projeto Aprovado + 120 dias
+function vencimentoDe(dataAprov){ if(!dataAprov) return ''; const s=String(dataAprov).slice(0,10);
+  const d=new Date(s+'T00:00:00'); if(isNaN(d)) return ''; d.setDate(d.getDate()+PRAZO_VENC_DIAS);
+  const p2=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate()); }
+function diasParaVenc(dataAprov){ const v=vencimentoDe(dataAprov); if(!v) return null;
+  const hj=new Date(); hj.setHours(0,0,0,0); return Math.round((new Date(v+'T00:00:00')-hj)/86400000); }
 let cliFilter = '';
 let loginStep = 'pass';   // pass | mfa | enroll
 let mfaFactorId = null;
@@ -372,6 +387,14 @@ function optsList(field, base){
 }
 function sitClass(s){ if(s==='Encerrado') return 'green'; if(s==='Aguardando') return 'amber';
   if(s==='Cancelado') return 'gray'; return 'blue'; }
+function vencCell(p){ const v=vencimentoDe(p.dataProjAprovado); if(!v) return '—';
+  const dd=diasParaVenc(p.dataProjAprovado);
+  let st='background:#e0f2fe;color:#075985'; // normal
+  if(p.faturado) st='background:#dcfce7;color:#166534';       // já faturado: ok (verde)
+  else if(dd<0) st='background:#fee2e2;color:#991b1b';        // vencido: vermelho
+  else if(dd<=15) st='background:#fef9c3;color:#854d0e';      // vencendo: amarelo
+  const ad=p.faturado?'':(dd<0?` (${-dd}d atrasado)`:dd<=15?` (${dd}d)`:'');
+  return `<span class="chip" style="${st}" title="Projeto aprovado em ${d2br(p.dataProjAprovado)} + ${PRAZO_VENC_DIAS} dias">${d2br(v)}${ad}</span>`; }
 function nextId(){ return DB.projetos.reduce((m,p)=>Math.max(m,p.id||0),0)+1; }
 
 /* ---------- AUTH ---------- */
@@ -520,7 +543,7 @@ async function loadData(){
     else { setOffline(true,null); toast('Sem internet e sem dados salvos neste aparelho.'); }
     return;
   }
-  if(proj && proj.length) HAS_PARECER = ('parecer_acesso' in proj[0]);
+  if(proj && proj.length){ HAS_PARECER = ('parecer_acesso' in proj[0]); HAS_APROV = ('data_projeto_aprovado' in proj[0]); }
   DB.projetos = (proj||[]).map(toCamel);
   DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,
     pago:r.pago,projetoId:r.projeto_id,dataPagamento:r.data_pagamento}));
@@ -648,7 +671,7 @@ function fillFilters(){
 }
 
 /* filtro de Status com seleção múltipla (padrão: só "Projeto Enviado") */
-const STATUS_PADRAO = ['Aguardando','Enviar Novo Projeto','Projeto Enviado','Vistoria/Concluído'];
+const STATUS_PADRAO = ['Aguardando','Enviar Novo Projeto','Projeto Enviado','Projeto Aprovado','Vistoria/Concluído'];
 let statusSel = new Set(STATUS_PADRAO);
 function buildStatusFilter(){
   const opts=optsList('status',BASE_STATUS);
@@ -671,6 +694,7 @@ function render(){
   const fsi=document.getElementById('fsit').value;
   const fe=document.getElementById('femp').value;
   const fco=document.getElementById('fconc').value;
+  const ffat=document.getElementById('ffat').value;
   const note=document.getElementById('fnote');
   if(cliFilter){ note.style.display='flex';
     note.innerHTML=`Serviços de <b>&nbsp;${cliFilter}</b>
@@ -685,6 +709,8 @@ function render(){
     else if(p.situacao==='Encerrado') return false; // "Todas situações" nao mostra Encerrado
     if(fe && p.empresa!==fe) return false;
     if(fco && p.concessionaria!==fco) return false;
+    if(ffat==='faturados' && !p.faturado) return false;
+    if(ffat==='falta' && p.faturado) return false;
     if(q){ const blob=`${p.cliente} ${p.instalacao} ${p.protocolo} ${p.cpf} ${p.tipo}`.toLowerCase();
       if(!blob.includes(q)) return false; }
     return true;
@@ -693,7 +719,7 @@ function render(){
   const tb=document.getElementById('rows');
   document.getElementById('pcount').innerHTML = `Mostrando <b>${rows.length}</b> de <b>${DB.projetos.length}</b> projetos`
     + (rows.length<DB.projetos.length ? ' — o restante está apenas oculto pelos filtros (não foi apagado).' : '');
-  if(!rows.length){ tb.innerHTML=`<tr><td colspan="10" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="11" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
   tb.innerHTML=rows.map(p=>`<tr onclick="openEdit(${p.id})">
     <td><b>${p.cliente||'—'}</b>${p.idProjeto?` <span class="muted">#${p.idProjeto}</span>`:''}</td>
     <td>${p.tipo||'—'}</td>
@@ -703,6 +729,7 @@ function render(){
     <td class="right">${p.potencia!=null?p.potencia.toLocaleString('pt-BR'):'—'}</td>
     <td>${d2br(p.dataEntrada)}</td>
     <td>${p.status?`<span class="chip blue">${p.status}</span>`:'—'}</td>
+    <td class="center">${vencCell(p)}</td>
     <td class="center">${p.situacao?`<span class="chip ${sitClass(p.situacao)}">${p.situacao}</span>`:'—'}</td>
     <td class="center">${p.faturado?'✅':'—'}</td>
   </tr>`).join('');
@@ -711,15 +738,21 @@ function renderClientes(){
   const q=(document.getElementById('qc').value||'').toLowerCase();
   const map={};
   DB.projetos.forEach(p=>{ const c=p.cliente; if(!c) return;
-    if(!map[c]) map[c]={n:0,v:0,cpf:p.cpf,aguard:0,enviado:0}; map[c].n++; map[c].v+=(p.valor||0);
+    if(!map[c]) map[c]={n:0,v:0,cpf:p.cpf,aguard:0,enviado:0,venc:null}; map[c].n++; map[c].v+=(p.valor||0);
     if(p.status==='Aguardando') map[c].aguard++;
-    if(p.status==='Projeto Enviado') map[c].enviado++; });
+    if(p.status==='Projeto Enviado') map[c].enviado++;
+    // guarda o vencimento mais próximo (de projetos ainda não faturados)
+    if(p.dataProjAprovado && !p.faturado){ const vc=vencimentoDe(p.dataProjAprovado);
+      if(vc && (!map[c].venc || vc<map[c].venc)) map[c].venc=vc; } });
   let names=Object.keys(map).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(q) names=names.filter(n=>n.toLowerCase().includes(q));
   const g=document.getElementById('cligrid');
   g.innerHTML=names.map(n=>{ const m=map[n]; const chips=[];
     if(m.enviado) chips.push(`<span class="chip blue">Projeto Enviado${m.enviado>1?' ('+m.enviado+')':''}</span>`);
     if(m.aguard) chips.push(`<span class="chip amber">Aguardando${m.aguard>1?' ('+m.aguard+')':''}</span>`);
+    if(m.venc){ const hj=new Date(); hj.setHours(0,0,0,0); const dd=Math.round((new Date(m.venc+'T00:00:00')-hj)/86400000);
+      const st=dd<0?'background:#fee2e2;color:#991b1b':dd<=15?'background:#fef9c3;color:#854d0e':'background:#e0f2fe;color:#075985';
+      chips.push(`<span class="chip" style="${st}">Vence ${d2br(m.venc)}</span>`); }
     return `<div class="cli" onclick="abrirCliente('${n.replace(/'/g,"\\'")}')">
     <div class="nm">${n}</div>
     <div class="mt">${m.n} projeto(s) • ${money(m.v)}${m.cpf?'<br>CPF '+m.cpf:''}</div>
@@ -893,8 +926,11 @@ function openEdit(id){
   const g=(k)=>p?(p[k]??''):'';
   document.getElementById('f-id').value = p?p.id:'';
   ['cliente','instalacao','cpf','valor','potencia','modulos',
-   'dataEntrada','dataEnvio','dataVistoria','faturado','empresa','protocolo','parecerAcesso','obs']
+   'dataEntrada','dataEnvio','dataVistoria','dataProjAprovado','faturado','empresa','protocolo','parecerAcesso','obs']
     .forEach(k=>document.getElementById('f-'+k).value = g(k)==null?'':(''+g(k)).slice(0, k.startsWith('data')||k==='faturado'?10:9999));
+  atualizaVenc();
+  const ap=document.getElementById('f-dataProjAprovado');
+  ap.disabled=!HAS_APROV; ap.title=HAS_APROV?'':'(será liberado após atualização do banco)';
   fillSelect('f-mes', MESES, mesMonth(g('mes')));
   fillSelect('f-tipo', BASE_TIPOS, g('tipo'));
   fillSelect('f-concessionaria', CONCESSIONARIAS, g('concessionaria'));
@@ -906,6 +942,14 @@ function openEdit(id){
   document.getElementById('overlay').classList.add('open');
 }
 function closeEdit(){ document.getElementById('overlay').classList.remove('open'); }
+function atualizaVenc(){ const v=vencimentoDe(document.getElementById('f-dataProjAprovado').value);
+  document.getElementById('f-vencimento').value = v?d2br(v):''; }
+function onStatusChange(){
+  // ao marcar "Projeto Aprovado" e ainda sem data, sugere hoje (base do vencimento)
+  const st=document.getElementById('f-status').value;
+  const ap=document.getElementById('f-dataProjAprovado');
+  if(st==='Projeto Aprovado' && HAS_APROV && !ap.value){ ap.value=hoje(); atualizaVenc(); }
+}
 async function saveProject(){
   const idv=document.getElementById('f-id').value;
   const oldValor = idv ? ((DB.projetos.find(x=>x.id===+idv)||{}).valor ?? null) : null;
@@ -918,12 +962,14 @@ async function saveProject(){
     tipo:document.getElementById('f-tipo').value, valor:numv('valor'), potencia:numv('potencia'),
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:document.getElementById('f-status').value,
+    dataProjAprovado:val('dataProjAprovado'),
     situacao:document.getElementById('f-situacao').value, empresa:val('empresa'),
     concessionaria:document.getElementById('f-concessionaria').value,
     protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), obs:val('obs') };
   if(!obj.cliente){ toast('Informe o cliente'); return; }
   const row=toSnake(obj);
   if(!HAS_PARECER) delete row.parecer_acesso;
+  if(!HAS_APROV) delete row.data_projeto_aprovado;
   const isNew=!idv; let novoId=null, error;
   if(idv){ row.id=+idv; ({error}=await sb.from('projetos').update(row).eq('id',+idv)); }
   else { novoId=nextId(); row.id=novoId; ({error}=await sb.from('projetos').insert(row)); }
@@ -1024,11 +1070,11 @@ const idbSet=(k,v)=>idbReq('readwrite',s=>s.put(v,k));
 
 function buildXlsx(quando){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','concessionaria','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','dataProjAprovado','vencimento','faturado','empresa','concessionaria','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Concessionária','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','Faturado','Empresa','Concessionária','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
-  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(p[c]==null?'':p[c]))))];
+  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):(p[c]==null?'':p[c])))))];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Projetos');
   return XLSX.write(wb,{type:'array',bookType:'xlsx'});
@@ -1069,11 +1115,11 @@ async function exportJSON(auto){
 }
 function exportCSV(){
   const cols=['categoria','mes','idProjeto','cliente','instalacao','cpf','tipo','valor','potencia',
-    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','faturado','empresa','concessionaria','obs'];
+    'modulos','dataEntrada','dataEnvio','protocolo','parecerAcesso','dataVistoria','ntVistoria','status','situacao','dataProjAprovado','vencimento','faturado','empresa','concessionaria','obs'];
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
-    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Faturado','Empresa','Concessionária','Observação'];
+    'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','Faturado','Empresa','Concessionária','Observação'];
   const esc=(v)=>{v=(v==null?'':String(v)); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):p[c]))).join(';')));
+  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):p[c])))).join(';')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   dl(blob,`projetos-solar-${new Date().toISOString().slice(0,10)}.csv`); toast('Arquivo Excel (CSV) baixado');
 }
