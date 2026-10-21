@@ -280,7 +280,7 @@
       <input type="hidden" id="f-id">
       <div class="grid2">
         <div class="field full"><label>Cliente</label><input id="f-cliente"></div>
-        <div class="field"><label>Tipo de serviço</label><select id="f-tipo"></select></div>
+        <div class="field"><label>Tipo de serviço</label><select id="f-tipo" onchange="tipoNovo()"></select></div>
         <div class="field"><label>Instalação</label><input id="f-instalacao"></div>
         <div class="field"><label>CPF</label><input id="f-cpf"></div>
         <div class="field"><label>Mês</label><select id="f-mes"></select></div>
@@ -338,7 +338,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '03/10/2026 · 16h';   // <-- muda a cada atualização
+const APP_VERSION = '21/10/2026 · 10h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -777,7 +777,7 @@ function novoProjetoCliente(nome){
   document.getElementById('f-cliente').value=nome;
   document.getElementById('f-cpf').value=(proj.find(p=>p.cpf)||{}).cpf||'';
   document.getElementById('f-dataEntrada').value=hoje();
-  fillSelect('f-tipo', BASE_TIPOS, ref.tipo||'');
+  fillTipoSelect(ref.tipo||'');
   fillSelect('f-status',optsList('status',BASE_STATUS), 'Aguardando');
   fillSelect('f-situacao',optsList('situacao',BASE_SIT), 'Aguardando');
 }
@@ -926,6 +926,23 @@ function renderDashboard(){
 function fillSelect(id,arr,val){const el=document.getElementById(id);
   el.innerHTML=`<option value=""></option>`+arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join('');
   if(val&&!arr.includes(val)) el.insertAdjacentHTML('beforeend',`<option selected>${val}</option>`);}
+/* Tipo de serviço: lista (base + os já usados nos projetos) + opção de criar um novo */
+function fillTipoSelect(val){
+  fillSelect('f-tipo', optsList('tipo',BASE_TIPOS), val);
+  document.getElementById('f-tipo').insertAdjacentHTML('beforeend',
+    `<option value="__novo__">➕ Criar novo tipo de serviço…</option>`);
+}
+function tipoNovo(){
+  const sel=document.getElementById('f-tipo');
+  if(sel.value!=='__novo__') return;
+  const nome=(prompt('Nome do novo tipo de serviço:')||'').trim();
+  if(!nome){ sel.value=''; return; }
+  const ja=[...sel.options].find(o=>o.value.toLowerCase()===nome.toLowerCase() && o.value!=='__novo__');
+  if(ja){ sel.value=ja.value; return; }
+  const novoOpt=[...sel.options].find(o=>o.value==='__novo__');
+  sel.insertBefore(new Option(nome, nome, true, true), novoOpt);
+  sel.value=nome;
+}
 function openEdit(id){
   const p = id ? DB.projetos.find(x=>x.id===id) : null;
   document.getElementById('mtitle').textContent = p?'Editar projeto':'Novo projeto';
@@ -942,7 +959,7 @@ function openEdit(id){
   const rc=document.getElementById('f-rc');
   rc.checked = p?!!p.rc:false; rc.disabled=!HAS_RC; rc.title=HAS_RC?'':'(será liberado após atualização do banco)';
   fillSelect('f-mes', MESES, mesMonth(g('mes')));
-  fillSelect('f-tipo', BASE_TIPOS, g('tipo'));
+  fillTipoSelect(g('tipo'));
   fillSelect('f-concessionaria', CONCESSIONARIAS, g('concessionaria'));
   fillSelect('f-status',optsList('status',BASE_STATUS), g('status'));
   fillSelect('f-situacao',optsList('situacao',BASE_SIT), g('situacao'));
@@ -969,7 +986,7 @@ async function saveProject(){
   const obj={
     categoria:'Solicitação', cliente:val('cliente'),
     instalacao:val('instalacao'), cpf:val('cpf'), mes:val('mes'),
-    tipo:document.getElementById('f-tipo').value, valor:numv('valor'), potencia:numv('potencia'),
+    tipo:(document.getElementById('f-tipo').value==='__novo__'?'':document.getElementById('f-tipo').value), valor:numv('valor'), potencia:numv('potencia'),
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:document.getElementById('f-status').value,
     dataProjAprovado:val('dataProjAprovado'), rc:document.getElementById('f-rc').checked,
