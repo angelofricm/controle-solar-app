@@ -70,6 +70,9 @@
   tbody tr:nth-child(even){background:#f8fafc}
   tbody tr:hover{background:var(--blue-l);cursor:pointer}
   .chip{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap}
+  .cfg-list{max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:4px}
+  .cfg-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line)}
+  .cfg-item:last-child{border-bottom:none}
   .chip.green{background:var(--green-b);color:var(--green-t)}
   .chip.amber{background:var(--amber-b);color:var(--amber-t)}
   .chip.gray{background:var(--gray-b);color:var(--gray-t)}
@@ -174,7 +177,7 @@
   <button class="btn btn-ghost" onclick="atualizar()">⟳ Atualizar</button>
   <button class="btn btn-ghost" onclick="exportCSV()">Exportar Excel</button>
   <button class="btn btn-ghost" onclick="exportJSON()">Backup</button>
-  <button class="btn btn-ghost" onclick="alterarSenha()">🔑 Senha</button>
+  <button class="btn btn-ghost" onclick="openConfig()">⚙ Config</button>
   <button class="btn btn-ghost" onclick="doLogout()">Sair</button>
 </header>
 
@@ -318,6 +321,37 @@
     </div>
   </div>
 </div>
+
+<div class="overlay" id="cfgOverlay">
+  <div class="modal" style="max-width:640px">
+    <div class="mhead"><h2>⚙ Configurações</h2>
+      <button class="x" onclick="closeConfig()">×</button></div>
+    <div class="mbody">
+      <div class="sec-title" style="margin-top:0">🔑 Senha</div>
+      <button class="btn btn-line" onclick="alterarSenha()">Alterar minha senha</button>
+
+      <div class="sec-title">Tipos de Serviço <span class="muted" style="font-size:12px;font-weight:400">(ordem alfabética)</span></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="cfg-novo-tipo" placeholder="Novo tipo de serviço" style="flex:1" onkeydown="if(event.key==='Enter')addTipoCfg()">
+        <button class="btn" style="background:var(--blue);color:#fff" onclick="addTipoCfg()">+ Incluir</button>
+      </div>
+      <div id="cfg-lista-tipos" class="cfg-list"></div>
+
+      <div class="sec-title">Status</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="cfg-novo-status" placeholder="Novo status" style="flex:1" onkeydown="if(event.key==='Enter')addStatusCfg()">
+        <button class="btn" style="background:var(--blue);color:#fff" onclick="addStatusCfg()">+ Incluir</button>
+      </div>
+      <div id="cfg-lista-status" class="cfg-list"></div>
+
+      <p id="cfg-aviso" style="font-size:12px;color:var(--amber-t);margin-top:14px"></p>
+    </div>
+    <div class="mfoot">
+      <div class="sp" style="flex:1"></div>
+      <button class="btn" style="background:var(--blue);color:#fff" onclick="closeConfig()">Fechar</button>
+    </div>
+  </div>
+</div>
 </div><!-- /appRoot -->
 
 <div class="toast" id="toast"></div>
@@ -338,7 +372,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '21/10/2026 · 11h';   // <-- muda a cada atualização
+const APP_VERSION = '21/10/2026 · 15h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -556,7 +590,82 @@ async function loadData(){
     pago:r.pago,projetoId:r.projeto_id,dataPagamento:r.data_pagamento}));
   salvarCache();
   setOffline(false);
+  await loadConfig();
   refresh();
+}
+/* ---------- CONFIGURAÇÕES (tipos de serviço e status) ---------- */
+let CFG = { tipos:null, status:null };   // null = usar a lista padrão + o que já existe nos projetos
+let HAS_CONFIG = true;                     // vira false se a tabela "config" ainda nao existir
+function htmlEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function cfgLocalLer(){ try{ const c=JSON.parse(localStorage.getItem('cs_cfg')||'null');
+  if(c){ if(Array.isArray(c.tipos)) CFG.tipos=c.tipos; if(Array.isArray(c.status)) CFG.status=c.status; } }catch(e){} }
+function cfgLocalSalvar(){ try{ localStorage.setItem('cs_cfg', JSON.stringify(CFG)); }catch(e){} }
+async function loadConfig(){
+  cfgLocalLer();
+  try{
+    const {data,error}=await sb.from('config').select('*');
+    if(error){ HAS_CONFIG=false; return; }
+    HAS_CONFIG=true;
+    const m={}; (data||[]).forEach(r=>{ m[r.chave]=r.valor; });
+    if(Array.isArray(m.tipos)) CFG.tipos=m.tipos;
+    if(Array.isArray(m.status)) CFG.status=m.status;
+    cfgLocalSalvar();
+  }catch(e){ HAS_CONFIG=false; }
+}
+async function cfgSalvar(chave){
+  cfgLocalSalvar();
+  if(HAS_CONFIG){ try{ await sb.from('config').upsert({chave, valor:(chave==='tipos'?CFG.tipos:CFG.status)}); }catch(e){} }
+}
+function tiposOrdenados(){
+  const base = (CFG.tipos&&CFG.tipos.length) ? CFG.tipos : uniq([...BASE_TIPOS, ...DB.projetos.map(p=>p.tipo)]);
+  return uniq(base).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+function statusLista(){
+  const base = (CFG.status&&CFG.status.length) ? CFG.status : uniq([...BASE_STATUS, ...DB.projetos.map(p=>p.status)]);
+  return uniq(base).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+let _cfgTipos=[], _cfgStatus=[];
+function openConfig(){
+  renderCfgListas();
+  document.getElementById('cfg-aviso').textContent = HAS_CONFIG ? ''
+    : '⚠ A tabela "config" ainda não existe no banco — por enquanto estas listas ficam salvas só neste aparelho. Rode o SQL do config (add-config.sql) para sincronizar entre o celular e o PC.';
+  document.getElementById('cfgOverlay').classList.add('open');
+}
+function closeConfig(){ document.getElementById('cfgOverlay').classList.remove('open'); refresh(); }
+function renderCfgListas(){
+  _cfgTipos=tiposOrdenados(); _cfgStatus=statusLista();
+  const item=(txt,fn,i)=>`<div class="cfg-item"><span>${htmlEsc(txt)}</span>
+    <button class="btn btn-danger" style="padding:2px 9px;font-size:12px" title="Excluir da lista" onclick="${fn}(${i})">✕</button></div>`;
+  document.getElementById('cfg-lista-tipos').innerHTML =
+    _cfgTipos.map((t,i)=>item(t,'delTipoCfg',i)).join('') || '<div class="muted" style="padding:6px">Nenhum.</div>';
+  document.getElementById('cfg-lista-status').innerHTML =
+    _cfgStatus.map((s,i)=>item(s,'delStatusCfg',i)).join('') || '<div class="muted" style="padding:6px">Nenhum.</div>';
+}
+async function addTipoCfg(){
+  const inp=document.getElementById('cfg-novo-tipo'); const t=(inp.value||'').trim(); if(!t) return;
+  const atual=tiposOrdenados();
+  if(atual.some(x=>x.toLowerCase()===t.toLowerCase())){ inp.value=''; renderCfgListas(); return; }
+  CFG.tipos=uniq([...atual,t]).sort((a,b)=>a.localeCompare(b,'pt-BR')); await cfgSalvar('tipos');
+  inp.value=''; renderCfgListas();
+}
+async function delTipoCfg(i){
+  const t=_cfgTipos[i]; if(t==null) return;
+  const emUso=DB.projetos.some(p=>p.tipo===t);
+  if(!confirm('Excluir o tipo "'+t+'" da lista?'+(emUso?'\n\n(Projetos que já usam esse tipo continuam como estão — ele só deixa de aparecer para novos projetos.)':''))) return;
+  CFG.tipos=tiposOrdenados().filter(x=>x!==t); await cfgSalvar('tipos'); renderCfgListas();
+}
+async function addStatusCfg(){
+  const inp=document.getElementById('cfg-novo-status'); const s=(inp.value||'').trim(); if(!s) return;
+  const atual=statusLista();
+  if(atual.some(x=>x.toLowerCase()===s.toLowerCase())){ inp.value=''; renderCfgListas(); return; }
+  CFG.status=uniq([...atual,s]).sort((a,b)=>a.localeCompare(b,'pt-BR')); await cfgSalvar('status');
+  inp.value=''; renderCfgListas();
+}
+async function delStatusCfg(i){
+  const s=_cfgStatus[i]; if(s==null) return;
+  const emUso=DB.projetos.some(p=>p.status===s);
+  if(!confirm('Excluir o status "'+s+'" da lista?'+(emUso?'\n\n(Projetos que já usam esse status continuam como estão.)':''))) return;
+  CFG.status=statusLista().filter(x=>x!==s); await cfgSalvar('status'); renderCfgListas();
 }
 function hoje(){ return new Date().toISOString().slice(0,10); }
 function carimbo(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
@@ -681,7 +790,7 @@ function fillFilters(){
 const STATUS_PADRAO = ['Aguardando','Enviar Novo Projeto','Projeto Enviado','Projeto Aprovado','Vistoria/Concluído'];
 let statusSel = new Set(STATUS_PADRAO);
 function buildStatusFilter(){
-  const opts=optsList('status',BASE_STATUS);
+  const opts=optsList('status',statusLista());
   document.getElementById('fstatusOpts').innerHTML = opts.map(s=>
     `<label><input type="checkbox" value="${s.replace(/"/g,'&quot;')}" ${statusSel.has(s)?'checked':''}
       onchange="onStatusToggle(this)"> ${s}</label>`).join('');
@@ -781,7 +890,7 @@ function novoProjetoCliente(nome){
   document.getElementById('f-cpf').value=(proj.find(p=>p.cpf)||{}).cpf||'';
   document.getElementById('f-dataEntrada').value=hoje();
   fillTipoSelect(ref.tipo||'');
-  fillSelect('f-status',optsList('status',BASE_STATUS), 'Aguardando');
+  fillSelect('f-status',statusLista(), 'Aguardando');
   fillSelect('f-situacao',optsList('situacao',BASE_SIT), 'Aguardando');
 }
 function renderPainel(){
@@ -931,7 +1040,7 @@ function fillSelect(id,arr,val){const el=document.getElementById(id);
   if(val&&!arr.includes(val)) el.insertAdjacentHTML('beforeend',`<option selected>${val}</option>`);}
 /* Tipo de serviço: lista (base + os já usados nos projetos) + opção de criar um novo */
 function fillTipoSelect(val){
-  fillSelect('f-tipo', optsList('tipo',BASE_TIPOS), val);
+  fillSelect('f-tipo', tiposOrdenados(), val);
   document.getElementById('f-tipo').insertAdjacentHTML('beforeend',
     `<option value="__novo__">➕ Criar novo tipo de serviço…</option>`);
 }
@@ -940,11 +1049,12 @@ function tipoNovo(){
   if(sel.value!=='__novo__') return;
   const nome=(prompt('Nome do novo tipo de serviço:')||'').trim();
   if(!nome){ sel.value=''; return; }
-  const ja=[...sel.options].find(o=>o.value.toLowerCase()===nome.toLowerCase() && o.value!=='__novo__');
-  if(ja){ sel.value=ja.value; return; }
-  const novoOpt=[...sel.options].find(o=>o.value==='__novo__');
-  sel.insertBefore(new Option(nome, nome, true, true), novoOpt);
-  sel.value=nome;
+  const atual=tiposOrdenados();
+  const ja=atual.find(x=>x.toLowerCase()===nome.toLowerCase());
+  if(ja){ fillTipoSelect(ja); return; }
+  CFG.tipos=uniq([...atual,nome]).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  cfgSalvar('tipos');
+  fillTipoSelect(nome);   // reconstrói em ordem alfabética com o novo já selecionado
 }
 function openEdit(id){
   const p = id ? DB.projetos.find(x=>x.id===id) : null;
@@ -964,7 +1074,7 @@ function openEdit(id){
   fillSelect('f-mes', MESES, mesMonth(g('mes')));
   fillTipoSelect(g('tipo'));
   fillSelect('f-concessionaria', CONCESSIONARIAS, g('concessionaria'));
-  fillSelect('f-status',optsList('status',BASE_STATUS), g('status'));
+  fillSelect('f-status',statusLista(), g('status'));
   fillSelect('f-situacao',optsList('situacao',BASE_SIT), g('situacao'));
   const pa=document.getElementById('f-parecerAcesso');
   pa.disabled=!HAS_PARECER;
