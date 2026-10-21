@@ -338,7 +338,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '21/10/2026 · 10h';   // <-- muda a cada atualização
+const APP_VERSION = '21/10/2026 · 11h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -709,8 +709,11 @@ function render(){
         onclick="novoProjetoCliente('${cliFilter.replace(/'/g,"\\'")}')">+ Novo projeto p/ este cliente</button>
       &nbsp;<a href="#" onclick="cliFilter='';render();return false" style="color:var(--blue-d)">✕ limpar</a>`;}
   else note.style.display='none';
+  const norm=s=>(s||'').toString().trim().toLowerCase();
   let rows=DB.projetos.filter(p=>{
-    if(cliFilter && p.cliente!==cliFilter) return false;
+    // Com um cliente aberto ("Serviços de X"): mostra TODOS os projetos dele,
+    // ignorando os demais filtros (senão um projeto do cliente poderia ficar oculto).
+    if(cliFilter) return norm(p.cliente)===norm(cliFilter);
     if(statusSel.size>0 && !statusSel.has(p.status)) return false;
     if(fsi){ if(p.situacao!==fsi) return false; }
     else if(p.situacao==='Encerrado') return false; // "Todas situações" nao mostra Encerrado
@@ -767,7 +770,7 @@ function renderClientes(){
     ${chips.length?`<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">${chips.join('')}</div>`:''}
   </div>`;}).join('') || `<div class="empty">Nenhum cliente.</div>`;
 }
-function abrirCliente(nome){ cliFilter=nome; setView('projetos'); }
+function abrirCliente(nome){ cliFilter=nome; const q=document.getElementById('q'); if(q) q.value=''; setView('projetos'); }
 /* item 5: novo projeto já com os dados do cliente */
 function novoProjetoCliente(nome){
   const proj=DB.projetos.filter(p=>p.cliente===nome)
