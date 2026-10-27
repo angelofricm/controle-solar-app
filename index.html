@@ -10,6 +10,7 @@
     --bg:#f4f6f9; --card:#ffffff; --line:#e2e8f0; --ink:#1e293b;
     --muted:#64748b; --green-b:#dcfce7; --green-t:#166534;
     --amber-b:#fef3c7; --amber-t:#92400e; --gray-b:#eef2f6; --gray-t:#475569;
+    --red-b:#fee2e2; --red-t:#b91c1c;
     --radius:12px;
   }
   *{box-sizing:border-box}
@@ -190,7 +191,7 @@
     <div class="tab" data-view="clientes" onclick="setView('clientes')">Clientes</div>
     <div class="tab" data-view="painel" onclick="setView('painel')">Painel</div>
     <div class="tab" data-view="dashboard" onclick="setView('dashboard')">📊 Dashboard</div>
-    <div class="tab" data-view="financeiro" onclick="setView('financeiro')">💸 Financeiro (Despesas + MEI)</div>
+    <div class="tab" data-view="financeiro" onclick="setView('financeiro')">💸 Financeiro</div>
   </div>
 
   <div id="v-projetos">
@@ -276,51 +277,38 @@
   </div>
 
   <div id="v-financeiro" class="hide">
-    <div class="sec-title" style="margin-top:0">💸 Despesas</div>
-    <div id="despNoTable" class="card" style="padding:18px;display:none;background:#fef3c7;color:#92400e">
-      <b>Para ativar as Despesas, rode uma vez o SQL no Supabase</b> (arquivo add-financeiro.sql).
+    <div id="finNoTable" class="card" style="padding:18px;display:none;background:#fef3c7;color:#92400e">
+      <b>Para ativar o Financeiro, rode uma vez o SQL no Supabase</b> (arquivo add-financeiro.sql).
       Enquanto isso, esta aba fica indisponível.</div>
-    <div id="despWrap">
+    <div id="finWrap">
       <div class="toolbar">
-        <input class="search" id="dq" placeholder="Buscar descrição, fornecedor…" oninput="renderDespesas()">
-        <select id="dmes" onchange="renderDespesas()"><option value="">Todos os meses</option></select>
-        <select id="demp" onchange="renderDespesas()"><option value="">Todas empresas</option></select>
+        <input class="search" id="dq" placeholder="Buscar descrição, fornecedor/cliente…" oninput="renderDespesas()">
+        <select id="dmes" onchange="renderFinanceiro()"><option value="">Ano todo</option></select>
+        <select id="demp" onchange="renderFinanceiro()"><option value="">Todas empresas</option></select>
+        <select id="dtipo" onchange="renderDespesas()"><option value="">Entradas e Saídas</option><option value="Entrada">Só entradas</option><option value="Saída">Só saídas</option></select>
         <select id="dcat" onchange="renderDespesas()"><option value="">Todas categorias</option></select>
-        <select id="dsit" onchange="renderDespesas()">
-          <option value="">Pagas e a pagar</option>
-          <option value="pago">Só pagas</option>
-          <option value="pendente">Só a pagar</option>
-        </select>
-        <button class="btn btn-primary" onclick="openDespesa()">+ Nova despesa</button>
+        <select id="dnf" onchange="renderDespesas()"><option value="">Com e sem NF</option><option value="com">Só com NF</option><option value="sem">Só sem NF</option></select>
+        <select id="dsit" onchange="renderDespesas()"><option value="">Pagos e pendentes</option><option value="pago">Só pagos/recebidos</option><option value="pendente">Só a pagar/receber</option></select>
+        <span style="flex:1"></span>
+        <button class="btn" style="background:var(--green-t);color:#fff" onclick="openEntrada()">+ Entrada</button>
+        <button class="btn" style="background:var(--red-t);color:#fff" onclick="openSaida()">+ Saída</button>
         <button class="btn btn-ghost" onclick="exportDespesasXlsx()">⤓ Excel</button>
       </div>
-      <div class="kpis" id="despKpis" style="margin-bottom:12px"></div>
+      <div class="kpis" id="finResumo" style="margin-bottom:16px"></div>
+
+      <div class="sec-title" style="margin-top:4px">Total faturado por empresa — <span id="finAno"></span></div>
+      <div class="kpis" id="finFaturado" style="margin-bottom:8px"></div>
+
+      <div class="sec-title">Lançamentos (Entradas e Saídas)</div>
+      <div id="finCount" style="font-size:12px;color:var(--muted);margin:2px 0 8px"></div>
       <div class="card"><div class="tbl-scroll"><table>
-        <thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Empresa</th><th class="right">Valor</th>
-          <th>Forma</th><th class="center">NF</th><th class="center">Situação</th><th class="center">Ações</th></tr></thead>
+        <thead><tr><th>Data</th><th class="center">Tipo</th><th>Categoria</th><th>Descrição</th><th>Empresa</th>
+          <th class="center">NF</th><th class="right">Valor</th><th class="center">Situação</th><th class="center">Ações</th></tr></thead>
         <tbody id="despRows"></tbody>
       </table></div></div>
-    </div>
 
-    <div class="sec-title" style="margin-top:22px;border-top:2px solid var(--line);padding-top:16px">🏦 Controle do MEI</div>
-    <div id="meiNoTable" class="card" style="padding:18px;display:none;background:#fef3c7;color:#92400e">
-      <b>Para ativar o controle do MEI, rode uma vez o SQL no Supabase</b> (arquivo add-financeiro.sql).</div>
-    <div id="meiWrap">
-      <div class="sec-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:0">
-        Limite do MEI — ano
-        <select id="meiAno" onchange="renderMEI()" style="max-width:120px"></select>
-        <span class="muted" style="font-weight:400;font-size:12px">Limite por CNPJ: R$ 81.000 / ano</span>
-      </div>
-      <div class="kpis" id="meiBars" style="margin-bottom:18px"></div>
-      <div class="sec-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        Faturamento, despesas e DAS por mês
-        <select id="meiEmp" onchange="renderMEI()" style="max-width:220px"></select>
-      </div>
-      <div class="card"><div class="tbl-scroll"><table>
-        <thead><tr><th>Mês</th><th class="right">Faturamento (R$)</th><th class="right">Despesas</th>
-          <th class="right">Lucro</th><th class="center">DAS pago</th><th class="right">DAS (R$)</th></tr></thead>
-        <tbody id="meiRows"></tbody>
-      </table></div></div>
+      <div class="sec-title">NF emitidas e limite do MEI — <span id="finAno2"></span> (total)</div>
+      <div id="finLimite"></div>
     </div>
   </div>
 </div>
@@ -417,21 +405,23 @@
     <div class="mbody">
       <input type="hidden" id="d-id">
       <div class="grid3">
+        <div class="field"><label>Tipo</label>
+          <select id="d-tipo" onchange="despTipoToggle()"><option>Saída</option><option>Entrada</option></select></div>
         <div class="field"><label>Data</label><input id="d-data" type="date"></div>
         <div class="field"><label>Valor (R$)</label><input id="d-valor" type="number" step="0.01"></div>
         <div class="field"><label>Categoria</label><select id="d-categoria"></select></div>
         <div class="field"><label>Empresa</label><select id="d-empresa"></select></div>
-        <div class="field"><label>Fornecedor</label><input id="d-fornecedor"></div>
+        <div class="field"><label id="d-forn-lbl">Fornecedor / Cliente</label><input id="d-fornecedor"></div>
         <div class="field"><label>Forma de pagamento</label><select id="d-forma"></select></div>
       </div>
       <div class="field full" style="margin-top:12px"><label>Descrição</label><input id="d-descricao"></div>
       <div class="grid3" style="margin-top:12px">
-        <div class="field"><label>Tem Nota Fiscal?</label>
+        <div class="field"><label>Nota Fiscal?</label>
           <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="d-nf" style="width:18px;height:18px"> Com NF</label></div>
-        <div class="field"><label>Despesa fixa/mensal?</label>
+        <div class="field"><label>Fixa / recorrente?</label>
           <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="d-fixa" style="width:18px;height:18px"> Recorrente</label></div>
         <div class="field"><label>Situação</label>
-          <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="d-pago" checked onchange="despPagoToggle()" style="width:18px;height:18px"> Já paga</label></div>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="d-pago" checked onchange="despPagoToggle()" style="width:18px;height:18px"> <span id="d-pago-lbl">Já paga</span></label></div>
         <div class="field" id="d-venc-wrap" style="display:none"><label>Vencimento</label><input id="d-vencimento" type="date"></div>
       </div>
     </div>
@@ -463,7 +453,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '27/10/2026 · 14h';   // <-- muda a cada atualização
+const APP_VERSION = '27/10/2026 · 17h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -492,8 +482,8 @@ function toCamel(r){ const o={}; FIELDS.forEach(([c,s])=>o[c]=r[s]); return o; }
 function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) return;
   let v=o[c]; if(v==='') v=null; r[s]=v; }); return r; }
 
-let DB = {projetos:[], receber:[], despesas:[], mei:[]};
-let HAS_DESPESAS = true, HAS_MEI = true;
+let DB = {projetos:[], receber:[], despesas:[]};
+let HAS_DESPESAS = true, HAS_MOV_TIPO = true;
 let view = 'projetos';
 let HAS_PARECER = true;  // vira false se a coluna parecer_acesso ainda nao existir no banco
 let HAS_APROV = true;    // vira false se a coluna data_projeto_aprovado ainda nao existir no banco
@@ -687,20 +677,20 @@ async function loadData(){
   refresh();
 }
 async function loadFinanceiro(){
-  try{ const r=await sb.from('despesas').select('*'); if(r.error){ HAS_DESPESAS=false; }
-    else { HAS_DESPESAS=true; DB.despesas=(r.data||[]).map(d=>({id:d.id,data:d.data,valor:d.valor,categoria:d.categoria,
+  try{ const r=await sb.from('despesas').select('*'); if(r.error){ HAS_DESPESAS=false; return; }
+    HAS_DESPESAS=true;
+    DB.despesas=(r.data||[]).map(d=>({id:d.id,data:d.data,valor:d.valor,categoria:d.categoria,
       descricao:d.descricao,empresa:d.empresa,fornecedor:d.fornecedor,forma:d.forma_pagamento,nf:d.nota_fiscal,
-      fixa:d.fixa,pago:d.pago,vencimento:d.vencimento})); } }catch(e){ HAS_DESPESAS=false; }
-  try{ const r=await sb.from('mei_mensal').select('*'); if(r.error){ HAS_MEI=false; }
-    else { HAS_MEI=true; DB.mei=(r.data||[]).map(m=>({id:m.id,empresa:m.empresa,ano:m.ano,mes:m.mes,
-      faturamento:m.faturamento,dasPago:m.das_pago,dasValor:m.das_valor,dasData:m.das_data})); } }catch(e){ HAS_MEI=false; }
+      fixa:d.fixa,pago:d.pago,vencimento:d.vencimento,tipo:d.tipo||'Saída'}));
+    try{ const t=await sb.from('despesas').select('tipo').limit(1); HAS_MOV_TIPO=!t.error; }catch(e){ HAS_MOV_TIPO=false; }
+  }catch(e){ HAS_DESPESAS=false; }
 }
 /* ---------- CONFIGURAÇÕES (tipos de serviço e status) ---------- */
 let CFG = { tipos:null, status:null, cat:null };   // null = usar a lista padrão + o que já existe
 let HAS_CONFIG = true;                     // vira false se a tabela "config" ainda nao existir
 const CFG_CHAVE = { tipos:'tipos', status:'status', cat:'categorias_despesa' };
-const CAT_DESPESA_PADRAO = ['Material','Combustível/Deslocamento','Ferramentas/Equipamentos',
-  'Mão de obra/Ajudante','Taxas concessionária/ART','EPI','DAS-MEI','Contador','Telefone/Internet',
+const CAT_DESPESA_PADRAO = ['Serviço','Venda','Material','Combustível/Deslocamento','Ferramentas/Equipamentos',
+  'Mão de obra/Ajudante','Taxas concessionária/ART','EPI','DAS-MEI','Pró-labore','Contador','Telefone/Internet',
   'Manutenção de veículo','Alimentação','Impostos/Taxas','Outros'];
 const FORMAS_PGTO = ['Pix','Dinheiro','Cartão de débito','Cartão de crédito','Boleto','Transferência'];
 const MEI_LIMITE = 81000;
@@ -797,61 +787,120 @@ async function delStatusCfg(i){
   if(!confirm('Excluir o status "'+s+'" da lista?'+(emUso?'\n\n(Projetos que já usam esse status continuam como estão.)':''))) return;
   CFG.status=statusLista().filter(x=>x!==s); await cfgSalvar('status'); renderCfgListas();
 }
-/* ---------- DESPESAS ---------- */
+/* ---------- FINANCEIRO (Entradas, Saídas, limite MEI) ---------- */
 function moneyC(v){ if(v==null||v==='') return 'R$ 0,00'; return Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+function finAnoSel(){ const fm=document.getElementById('dmes').value; return fm? +fm.slice(0,4) : new Date().getFullYear(); }
+function renderFinanceiro(){
+  const noT=document.getElementById('finNoTable'), wrap=document.getElementById('finWrap');
+  if(!HAS_DESPESAS){ noT.style.display='block'; wrap.style.display='none'; return; }
+  noT.style.display='none'; wrap.style.display='block';
+  fillDespFilters(); renderFaturadoEmpresa(); renderLimiteMEI(); renderDespesas();
+}
 function fillDespFilters(){
-  const set=(id,arr,ph)=>{const el=document.getElementById(id); if(!el) return; const cur=el.value;
-    el.innerHTML=`<option value="">${ph}</option>`+arr.map(v=>`<option>${v}</option>`).join(''); el.value=cur;};
   const meses=uniq(DB.despesas.map(d=>(d.data||'').slice(0,7))).filter(Boolean).sort().reverse();
   const elm=document.getElementById('dmes'); const curm=elm.value;
-  elm.innerHTML=`<option value="">Todos os meses</option>`+meses.map(m=>{const p=m.split('-');return `<option value="${m}">${p[1]}/${p[0]}</option>`;}).join(''); elm.value=curm;
+  elm.innerHTML=`<option value="">Ano todo</option>`+meses.map(m=>{const p=m.split('-');return `<option value="${m}">${p[1]}/${p[0]}</option>`;}).join(''); elm.value=curm;
+  const set=(id,arr,ph)=>{const el=document.getElementById(id); if(!el) return; const cur=el.value;
+    el.innerHTML=`<option value="">${ph}</option>`+arr.map(v=>`<option>${v}</option>`).join(''); el.value=cur;};
   set('demp', uniq([...EMPRESAS, ...DB.despesas.map(d=>d.empresa)]), 'Todas empresas');
   set('dcat', catDespesaLista(), 'Todas categorias');
 }
-function renderDespesas(){
-  const noT=document.getElementById('despNoTable'), wrap=document.getElementById('despWrap');
-  if(!HAS_DESPESAS){ noT.style.display='block'; wrap.style.display='none'; return; }
-  noT.style.display='none'; wrap.style.display='block';
-  fillDespFilters();
+function entradasDoAno(ano, empresa){
+  return DB.despesas.filter(d=>d.tipo==='Entrada' && (d.data||'').slice(0,4)===String(ano) && (!empresa||d.empresa===empresa));
+}
+function renderFaturadoEmpresa(){
+  const ano=finAnoSel();
+  document.getElementById('finAno').textContent=ano;
+  document.getElementById('finAno2').textContent=ano;
+  const emps=uniq([...EMPRESAS, ...DB.despesas.map(d=>d.empresa)]);
+  document.getElementById('finFaturado').innerHTML = emps.map(e=>{
+    const ents=entradasDoAno(ano,e);
+    const tot=ents.reduce((s,d)=>s+(d.valor||0),0);
+    const comNF=ents.filter(d=>d.nf).reduce((s,d)=>s+(d.valor||0),0);
+    return `<div class="kpi" style="border-top:3px solid ${empBarColor(e)}">
+      <div class="l" style="font-weight:600;color:var(--ink)">${e}</div>
+      <div class="v" style="color:var(--blue-d)">${moneyC(tot)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">com NF ${moneyC(comNF)} · sem NF ${moneyC(tot-comNF)}</div>
+    </div>`;
+  }).join('');
+}
+function renderLimiteMEI(){
+  const ano=finAnoSel();
+  const ents=entradasDoAno(ano,null);
+  const tot=ents.reduce((s,d)=>s+(d.valor||0),0);
+  const comNF=ents.filter(d=>d.nf).reduce((s,d)=>s+(d.valor||0),0);
+  const qtdNF=ents.filter(d=>d.nf).length;
+  const falta=Math.max(0, MEI_LIMITE-tot);
+  const pct=Math.min(100, MEI_LIMITE?tot/MEI_LIMITE*100:0);
+  const cor = tot>=MEI_LIMITE?'#991b1b': pct>=80?'#854d0e':'#166534';
+  const aviso = tot>=MEI_LIMITE?' • ⚠ ACIMA do limite': pct>=80?' • ⚠ perto do limite':'';
+  document.getElementById('finLimite').innerHTML=`<div class="card" style="padding:16px 18px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline">
+      <div style="font-size:24px;font-weight:800;color:${cor}">${moneyC(tot)}
+        <span style="font-size:13px;color:var(--muted);font-weight:600">faturado no ano</span></div>
+      <div style="font-weight:700;color:${cor}">de ${moneyC(MEI_LIMITE)} • ${pct.toFixed(0)}%${aviso}</div>
+    </div>
+    <div style="height:14px;border-radius:7px;background:#e5e7eb;overflow:hidden;margin:10px 0"><div style="height:100%;width:${pct}%;background:${cor}"></div></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px">
+      <div><div class="l">NF EMITIDAS (COM NF)</div><div style="font-weight:800;font-size:16px;margin-top:2px">${moneyC(comNF)} <span style="font-size:12px;color:var(--muted);font-weight:600">· ${qtdNF} nota(s)</span></div></div>
+      <div><div class="l">SEM NF</div><div style="font-weight:800;font-size:16px;margin-top:2px">${moneyC(tot-comNF)}</div></div>
+      <div><div class="l">FALTA P/ O LIMITE</div><div style="font-weight:800;font-size:16px;margin-top:2px;color:${falta>0?'var(--green-t)':'var(--red-t)'}">${falta>0?moneyC(falta):'R$ 0 (estourou)'}</div></div>
+    </div></div>`;
+}
+function despFiltradas(){
   const q=(document.getElementById('dq').value||'').toLowerCase();
   const fm=document.getElementById('dmes').value, fe=document.getElementById('demp').value,
-        fc=document.getElementById('dcat').value, fs=document.getElementById('dsit').value;
-  let rows=DB.despesas.filter(d=>{
-    if(fm && (d.data||'').slice(0,7)!==fm) return false;
+        ft=document.getElementById('dtipo').value, fc=document.getElementById('dcat').value,
+        fnf=document.getElementById('dnf').value, fs=document.getElementById('dsit').value;
+  return DB.despesas.filter(d=>{
+    if(fm){ if((d.data||'').slice(0,7)!==fm) return false; }
     if(fe && d.empresa!==fe) return false;
+    if(ft && d.tipo!==ft) return false;
     if(fc && d.categoria!==fc) return false;
+    if(fnf==='com' && !d.nf) return false;
+    if(fnf==='sem' && d.nf) return false;
     if(fs==='pago' && !d.pago) return false;
     if(fs==='pendente' && d.pago) return false;
     if(q){ const b=`${d.descricao||''} ${d.fornecedor||''} ${d.categoria||''}`.toLowerCase(); if(!b.includes(q)) return false; }
     return true;
   });
-  rows.sort((a,b)=>(b.data||'').localeCompare(a.data||''));
-  const total=rows.reduce((s,d)=>s+(d.valor||0),0);
-  const pend=rows.filter(d=>!d.pago).reduce((s,d)=>s+(d.valor||0),0);
-  document.getElementById('despKpis').innerHTML=
-    `<div class="kpi"><div class="l">Despesas (filtro)</div><div class="v">${rows.length}</div></div>
-     <div class="kpi"><div class="l">Total</div><div class="v">${moneyC(total)}</div></div>
-     <div class="kpi amber"><div class="l">A pagar</div><div class="v">${moneyC(pend)}</div></div>`;
+}
+function renderDespesas(){
+  if(!HAS_DESPESAS){ renderFinanceiro(); return; }
+  let rows=despFiltradas().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const ent=rows.filter(d=>d.tipo==='Entrada').reduce((s,d)=>s+(d.valor||0),0);
+  const sai=rows.filter(d=>d.tipo!=='Entrada').reduce((s,d)=>s+(d.valor||0),0);
+  document.getElementById('finResumo').innerHTML=
+    `<div class="kpi"><div class="l">ENTRADAS</div><div class="v" style="color:var(--green-t)">${moneyC(ent)}</div></div>
+     <div class="kpi"><div class="l">SAÍDAS</div><div class="v" style="color:var(--red-t)">${moneyC(sai)}</div></div>
+     <div class="kpi"><div class="l">SALDO / LUCRO</div><div class="v" style="color:${(ent-sai)<0?'var(--red-t)':'var(--blue-d)'}">${moneyC(ent-sai)}</div></div>`;
+  document.getElementById('finCount').textContent=`${rows.length} lançamento(s)`;
   const tb=document.getElementById('despRows');
-  if(!rows.length){ tb.innerHTML=`<tr><td colspan="9" class="empty">Nenhuma despesa.</td></tr>`; return; }
-  tb.innerHTML=rows.map(d=>`<tr onclick="openDespesa(${d.id})" style="cursor:pointer">
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="9" class="empty">Nenhum lançamento.</td></tr>`; return; }
+  tb.innerHTML=rows.map(d=>{ const ent=d.tipo==='Entrada';
+    return `<tr onclick="openDespesa(${d.id})" style="cursor:pointer">
     <td>${d2br(d.data)}</td>
+    <td class="center">${ent?'<span class="chip green">Entrada</span>':'<span class="chip" style="background:var(--red-b);color:var(--red-t)">Saída</span>'}</td>
     <td>${d.categoria||'—'}</td>
     <td>${d.descricao||'—'}</td>
     <td>${empChip(d.empresa)}</td>
-    <td class="right">${moneyC(d.valor)}</td>
-    <td>${d.forma||'—'}</td>
     <td class="center">${d.nf?'✅':'—'}</td>
-    <td class="center">${d.pago?'<span class="chip green">Paga</span>':`<span class="chip amber">A pagar${d.vencimento?' '+d2br(d.vencimento):''}</span>`}</td>
+    <td class="right" style="color:${ent?'var(--green-t)':'var(--red-t)'};font-weight:700">${ent?'+ ':'− '}${moneyC(d.valor)}</td>
+    <td class="center">${d.pago?`<span class="chip green">${ent?'Recebido':'Pago'}</span>`:`<span class="chip amber">${ent?'A receber':'A pagar'}${d.vencimento?' '+d2br(d.vencimento):''}</span>`}</td>
     <td class="center"><button class="btn btn-danger" style="padding:3px 8px;font-size:13px" title="Excluir" onclick="event.stopPropagation();delDespesa(${d.id})">🗑</button></td>
-  </tr>`).join('');
+  </tr>`;}).join('');
 }
-function openDespesa(id){
-  if(!HAS_DESPESAS){ renderDespesas(); return; }
+function openEntrada(){ openDespesa(null,'Entrada'); }
+function openSaida(){ openDespesa(null,'Saída'); }
+function openDespesa(id, tipoNovo){
+  if(!HAS_DESPESAS){ renderFinanceiro(); return; }
   const d = id?DB.despesas.find(x=>x.id===id):null;
-  document.getElementById('desp-title').textContent=d?'Editar despesa':'Nova despesa';
+  const tipo = d?d.tipo:(tipoNovo||'Saída');
+  document.getElementById('desp-title').textContent=(d?'Editar ':'Nova ')+(tipo==='Entrada'?'entrada':'saída');
   document.getElementById('desp-del').style.display=d?'inline-flex':'none';
   document.getElementById('d-id').value=d?d.id:'';
+  fillSelect('d-tipo',['Saída','Entrada'], tipo);
+  document.getElementById('d-tipo').disabled=!HAS_MOV_TIPO;
   document.getElementById('d-data').value=d?(d.data||'').slice(0,10):hoje();
   document.getElementById('d-valor').value=d?(d.valor??''):'';
   fillSelect('d-categoria', catDespesaLista(), d?d.categoria:'');
@@ -863,9 +912,12 @@ function openDespesa(id){
   document.getElementById('d-fixa').checked=d?!!d.fixa:false;
   document.getElementById('d-pago').checked=d?!!d.pago:true;
   document.getElementById('d-vencimento').value=d?(d.vencimento||'').slice(0,10):'';
-  despPagoToggle();
+  despTipoToggle(); despPagoToggle();
   document.getElementById('despOverlay').classList.add('open');
 }
+function despTipoToggle(){ const ent=document.getElementById('d-tipo').value==='Entrada';
+  document.getElementById('d-forn-lbl').textContent = ent?'Cliente':'Fornecedor';
+  document.getElementById('d-pago-lbl').textContent = ent?'Já recebida':'Já paga'; despPagoToggle(); }
 function despPagoToggle(){ const pago=document.getElementById('d-pago').checked;
   document.getElementById('d-venc-wrap').style.display=pago?'none':'block'; }
 function closeDespesa(){ document.getElementById('despOverlay').classList.remove('open'); }
@@ -874,96 +926,40 @@ async function saveDespesa(){
   const valor=document.getElementById('d-valor').value;
   if(valor===''){ toast('Informe o valor'); return; }
   const pago=document.getElementById('d-pago').checked;
-  const row={ data:g('d-data')||null, valor:parseFloat(valor), categoria:g('d-categoria')||null,
-    descricao:g('d-descricao')||null, empresa:g('d-empresa')||null, fornecedor:g('d-fornecedor')||null,
-    forma_pagamento:g('d-forma')||null, nota_fiscal:document.getElementById('d-nf').checked,
-    fixa:document.getElementById('d-fixa').checked, pago:pago,
-    vencimento: pago?null:(g('d-vencimento')||null) };
+  const row={ tipo:document.getElementById('d-tipo').value||'Saída', data:g('d-data')||null, valor:parseFloat(valor),
+    categoria:g('d-categoria')||null, descricao:g('d-descricao')||null, empresa:g('d-empresa')||null,
+    fornecedor:g('d-fornecedor')||null, forma_pagamento:g('d-forma')||null,
+    nota_fiscal:document.getElementById('d-nf').checked, fixa:document.getElementById('d-fixa').checked,
+    pago:pago, vencimento: pago?null:(g('d-vencimento')||null) };
+  if(!HAS_MOV_TIPO) delete row.tipo;
   const idv=document.getElementById('d-id').value; let error;
   if(idv){ ({error}=await sb.from('despesas').update(row).eq('id',+idv)); }
   else { ({error}=await sb.from('despesas').insert(row)); }
   if(error){ toast('Erro ao salvar: '+error.message); return; }
-  await loadFinanceiro(); closeDespesa(); renderDespesas(); toast('Despesa salva ✔');
+  await loadFinanceiro(); closeDespesa(); renderFinanceiro(); toast('Lançamento salvo ✔');
 }
 async function delDespesa(id){
-  if(!confirm('Excluir esta despesa?')) return;
+  if(!confirm('Excluir este lançamento?')) return;
   const {error}=await sb.from('despesas').delete().eq('id',id);
   if(error){ toast('Erro: '+error.message); return; }
-  await loadFinanceiro(); renderDespesas(); toast('Despesa excluída');
+  await loadFinanceiro(); renderFinanceiro(); toast('Lançamento excluído');
 }
 function exportDespesasXlsx(){
-  const rows=DB.despesas.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
-  const head=['Data','Categoria','Descrição','Empresa','Fornecedor','Forma','NF','Fixa','Situação','Vencimento','Valor'];
-  let tot=0; rows.forEach(d=>tot+=(d.valor||0));
-  const aoa=[['DESPESAS — Controle Solar'],['Gerado em',carimboLegivel()],[], head,
-    ...rows.map(d=>[d2br(d.data),d.categoria||'',d.descricao||'',d.empresa||'',d.fornecedor||'',d.forma||'',
-      d.nf?'Sim':'',d.fixa?'Sim':'',d.pago?'Paga':'A pagar',d.vencimento?d2br(d.vencimento):'',d.valor||0]),
-    [],['','','','','','','','','','TOTAL',tot]];
+  const rows=despFiltradas().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const head=['Data','Tipo','Categoria','Descrição','Empresa','Fornecedor/Cliente','Forma','NF','Fixa','Situação','Vencimento','Valor'];
+  let tEnt=0,tSai=0;
+  rows.forEach(d=>{ if(d.tipo==='Entrada') tEnt+=(d.valor||0); else tSai+=(d.valor||0); });
+  const aoa=[['FINANCEIRO — Controle Solar'],['Gerado em',carimboLegivel()],[], head,
+    ...rows.map(d=>[d2br(d.data),d.tipo||'Saída',d.categoria||'',d.descricao||'',d.empresa||'',d.fornecedor||'',d.forma||'',
+      d.nf?'Sim':'',d.fixa?'Sim':'',d.pago?(d.tipo==='Entrada'?'Recebido':'Pago'):(d.tipo==='Entrada'?'A receber':'A pagar'),
+      d.vencimento?d2br(d.vencimento):'',(d.tipo==='Entrada'?1:-1)*(d.valor||0)]),
+    [],['','','','','','','','','','ENTRADAS','',tEnt],['','','','','','','','','','SAÍDAS','',tSai],
+    ['','','','','','','','','','SALDO','',tEnt-tSai]];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),'Despesas');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),'Financeiro');
   const blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  dl(blob,`despesas-${carimbo()}.xlsx`); toast('Despesas exportadas ✔');
+  dl(blob,`financeiro-${carimbo()}.xlsx`); toast('Financeiro exportado ✔');
 }
-
-/* ---------- MEI (limite + DAS por empresa) ---------- */
-function renderMEI(){
-  const noT=document.getElementById('meiNoTable'), wrap=document.getElementById('meiWrap');
-  if(!HAS_MEI){ noT.style.display='block'; wrap.style.display='none'; return; }
-  noT.style.display='none'; wrap.style.display='block';
-  const anoSel=document.getElementById('meiAno'), empSel=document.getElementById('meiEmp');
-  const anoAtual=new Date().getFullYear();
-  const anos=uniq([anoAtual, anoAtual-1, ...DB.mei.map(m=>m.ano)]).sort((a,b)=>b-a);
-  const curAno=anoSel.value; anoSel.innerHTML=anos.map(a=>`<option>${a}</option>`).join('');
-  anoSel.value=curAno||String(anoAtual);
-  if(!empSel.value){ empSel.innerHTML=EMPRESAS.map(e=>`<option>${e}</option>`).join(''); empSel.value=EMPRESAS[0]; }
-  const ano=+anoSel.value, emp=empSel.value;
-  document.getElementById('meiBars').innerHTML = EMPRESAS.map(e=>{
-    const fat=DB.mei.filter(m=>m.empresa===e && m.ano===ano).reduce((s,m)=>s+(m.faturamento||0),0);
-    const pct=Math.min(100, MEI_LIMITE?fat/MEI_LIMITE*100:0);
-    const cor = fat>=MEI_LIMITE?'#991b1b': pct>=80?'#854d0e':'#166534';
-    return `<div class="kpi" style="border-top:3px solid ${empBarColor(e)}">
-      <div class="l" style="font-weight:600;color:var(--ink)">${e}</div>
-      <div style="font-size:18px;font-weight:800;color:${cor};margin:4px 0">${moneyC(fat)}</div>
-      <div style="height:9px;border-radius:6px;background:#e5e7eb;overflow:hidden"><div style="height:100%;width:${pct}%;background:${cor}"></div></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">${pct.toFixed(0)}% de R$ 81.000${fat>=MEI_LIMITE?' • ⚠ LIMITE ULTRAPASSADO':pct>=80?' • ⚠ perto do limite':''}</div>
-    </div>`;
-  }).join('');
-  const nomesMes=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const esc1=emp.replace(/'/g,"\\'");
-  let tF=0,tD=0,tDas=0;
-  const tb=document.getElementById('meiRows');
-  tb.innerHTML=nomesMes.map((nm,i)=>{
-    const mes=i+1; const r=DB.mei.find(m=>m.empresa===emp&&m.ano===ano&&m.mes===mes)||{};
-    const fat=r.faturamento||0;
-    const desp=DB.despesas.filter(d=>d.empresa===emp && (d.data||'').slice(0,7)===`${ano}-${String(mes).padStart(2,'0')}`).reduce((s,d)=>s+(d.valor||0),0);
-    const lucro=fat-desp; tF+=fat; tD+=desp; tDas+=(r.dasPago?(r.dasValor||0):0);
-    return `<tr>
-      <td>${nm}</td>
-      <td class="right"><input type="number" step="0.01" value="${r.faturamento??''}" placeholder="0" onchange="setMeiFat('${esc1}',${ano},${mes},this.value)" style="width:120px;text-align:right"></td>
-      <td class="right">${moneyC(desp)}</td>
-      <td class="right" style="color:${lucro<0?'#991b1b':'#166534'};font-weight:600">${moneyC(lucro)}</td>
-      <td class="center"><input type="checkbox" ${r.dasPago?'checked':''} onchange="setMeiDasPago('${esc1}',${ano},${mes},this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
-      <td class="right"><input type="number" step="0.01" value="${r.dasValor??''}" placeholder="0" onchange="setMeiDasValor('${esc1}',${ano},${mes},this.value)" style="width:90px;text-align:right"></td>
-    </tr>`;
-  }).join('')
-   + `<tr style="background:#f8fafc"><td><b>Total ${ano}</b></td><td class="right"><b>${moneyC(tF)}</b></td>
-      <td class="right"><b>${moneyC(tD)}</b></td><td class="right"><b>${moneyC(tF-tD)}</b></td>
-      <td class="center">—</td><td class="right"><b>${moneyC(tDas)}</b></td></tr>`;
-}
-async function meiUpsert(empresa,ano,mes,patch){
-  const r=DB.mei.find(m=>m.empresa===empresa&&m.ano===ano&&m.mes===mes)||{};
-  const payload={ empresa, ano, mes,
-    faturamento: patch.faturamento!==undefined?patch.faturamento:(r.faturamento||0),
-    das_pago: patch.dasPago!==undefined?patch.dasPago:(r.dasPago||false),
-    das_valor: patch.dasValor!==undefined?patch.dasValor:(r.dasValor??null),
-    das_data: patch.dasData!==undefined?patch.dasData:(r.dasData??null) };
-  const {error}=await sb.from('mei_mensal').upsert(payload,{onConflict:'empresa,ano,mes'});
-  if(error){ toast('Erro ao salvar: '+error.message); return; }
-  await loadFinanceiro(); renderMEI();
-}
-async function setMeiFat(e,a,m,v){ await meiUpsert(e,a,m,{faturamento: v===''?0:parseFloat(v)}); }
-async function setMeiDasPago(e,a,m,c){ await meiUpsert(e,a,m,{dasPago:c, dasData:c?hoje():null}); }
-async function setMeiDasValor(e,a,m,v){ await meiUpsert(e,a,m,{dasValor: v===''?null:parseFloat(v)}); }
 
 function hoje(){ return new Date().toISOString().slice(0,10); }
 function carimbo(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
@@ -1267,7 +1263,7 @@ function setView(v){
   if(v==='clientes') renderClientes();
   if(v==='painel') renderPainel();
   if(v==='dashboard') renderDashboard();
-  if(v==='financeiro'){ renderDespesas(); renderMEI(); }
+  if(v==='financeiro') renderFinanceiro();
 }
 function empBarColor(e){ if(e==='FR Soluções Elétricas')return '#2563eb';
   if(e==='Pontual Elétrica')return '#16a34a'; if(e==='Nordeste Solar')return '#ea580c'; return '#64748b'; }
