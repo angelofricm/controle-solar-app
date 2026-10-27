@@ -283,7 +283,14 @@
     <div id="finWrap">
       <div class="toolbar">
         <input class="search" id="dq" placeholder="Buscar descrição, fornecedor/cliente…" oninput="renderDespesas()">
-        <select id="dmes" onchange="renderFinanceiro()"><option value="">Ano todo</option></select>
+        <select id="dano" onchange="renderFinanceiro()" title="Ano"></select>
+        <div class="msel" id="dmesWrap">
+          <button type="button" class="msel-btn" onclick="toggleMesel(event)">Meses: <b id="dmesLabel">Todos</b> ▾</button>
+          <div class="msel-panel" id="dmesPanel">
+            <div class="msel-actions"><a onclick="setMesesAll()">Todos os meses</a></div>
+            <div id="dmesOpts"></div>
+          </div>
+        </div>
         <select id="demp" onchange="renderFinanceiro()"><option value="">Todas empresas</option></select>
         <select id="dtipo" onchange="renderDespesas()"><option value="">Entradas e Saídas</option><option value="Entrada">Só entradas</option><option value="Saída">Só saídas</option></select>
         <select id="dcat" onchange="renderDespesas()"><option value="">Todas categorias</option></select>
@@ -409,15 +416,15 @@
           <select id="d-tipo" onchange="despTipoToggle()"><option>Saída</option><option>Entrada</option></select></div>
         <div class="field"><label>Data</label><input id="d-data" type="date"></div>
         <div class="field"><label>Valor (R$)</label><input id="d-valor" type="number" step="0.01"></div>
-        <div class="field"><label>Categoria</label><select id="d-categoria"></select></div>
-        <div class="field"><label>Empresa</label><select id="d-empresa"></select></div>
+        <div class="field"><label>Categoria</label><select id="d-categoria" onchange="catNovo()"></select></div>
+        <div class="field"><label>Empresa</label><select id="d-empresa" onchange="empresaNovo()"></select></div>
         <div class="field"><label id="d-forn-lbl">Fornecedor / Cliente</label><input id="d-fornecedor"></div>
         <div class="field"><label>Forma de pagamento</label><select id="d-forma"></select></div>
       </div>
       <div class="field full" style="margin-top:12px"><label>Descrição</label><input id="d-descricao"></div>
       <div class="grid3" style="margin-top:12px">
         <div class="field"><label>Nota Fiscal?</label>
-          <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="d-nf" style="width:18px;height:18px"> Com NF</label></div>
+          <select id="d-nf"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
         <div class="field"><label>Fixa / recorrente?</label>
           <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="d-fixa" style="width:18px;height:18px"> Recorrente</label></div>
         <div class="field"><label>Situação</label>
@@ -453,7 +460,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '27/10/2026 · 17h';   // <-- muda a cada atualização
+const APP_VERSION = '27/10/2026 · 18h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -686,9 +693,11 @@ async function loadFinanceiro(){
   }catch(e){ HAS_DESPESAS=false; }
 }
 /* ---------- CONFIGURAÇÕES (tipos de serviço e status) ---------- */
-let CFG = { tipos:null, status:null, cat:null };   // null = usar a lista padrão + o que já existe
+let CFG = { tipos:null, status:null, cat:null, empresas:null };   // null = usar a lista padrão + o que já existe
 let HAS_CONFIG = true;                     // vira false se a tabela "config" ainda nao existir
-const CFG_CHAVE = { tipos:'tipos', status:'status', cat:'categorias_despesa' };
+const CFG_CHAVE = { tipos:'tipos', status:'status', cat:'categorias_despesa', empresas:'empresas' };
+function empresaLista(){ const base=(CFG.empresas&&CFG.empresas.length)?CFG.empresas:EMPRESAS;
+  return uniq([...base, ...DB.despesas.map(d=>d.empresa), ...DB.projetos.map(p=>p.empresa)]).filter(Boolean); }
 const CAT_DESPESA_PADRAO = ['Serviço','Venda','Material','Combustível/Deslocamento','Ferramentas/Equipamentos',
   'Mão de obra/Ajudante','Taxas concessionária/ART','EPI','DAS-MEI','Pró-labore','Contador','Telefone/Internet',
   'Manutenção de veículo','Alimentação','Impostos/Taxas','Outros'];
@@ -696,7 +705,7 @@ const FORMAS_PGTO = ['Pix','Dinheiro','Cartão de débito','Cartão de crédito'
 const MEI_LIMITE = 81000;
 function htmlEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function cfgLocalLer(){ try{ const c=JSON.parse(localStorage.getItem('cs_cfg')||'null');
-  if(c){ if(Array.isArray(c.tipos)) CFG.tipos=c.tipos; if(Array.isArray(c.status)) CFG.status=c.status; } }catch(e){} }
+  if(c){ ['tipos','status','cat','empresas'].forEach(k=>{ if(Array.isArray(c[k])) CFG[k]=c[k]; }); } }catch(e){} }
 function cfgLocalSalvar(){ try{ localStorage.setItem('cs_cfg', JSON.stringify(CFG)); }catch(e){} }
 async function loadConfig(){
   cfgLocalLer();
@@ -708,6 +717,7 @@ async function loadConfig(){
     if(Array.isArray(m.tipos)) CFG.tipos=m.tipos;
     if(Array.isArray(m.status)) CFG.status=m.status;
     if(Array.isArray(m.categorias_despesa)) CFG.cat=m.categorias_despesa;
+    if(Array.isArray(m.empresas)) CFG.empresas=m.empresas;
     cfgLocalSalvar();
   }catch(e){ HAS_CONFIG=false; }
 }
@@ -789,7 +799,22 @@ async function delStatusCfg(i){
 }
 /* ---------- FINANCEIRO (Entradas, Saídas, limite MEI) ---------- */
 function moneyC(v){ if(v==null||v==='') return 'R$ 0,00'; return Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
-function finAnoSel(){ const fm=document.getElementById('dmes').value; return fm? +fm.slice(0,4) : new Date().getFullYear(); }
+function finAnoSel(){ const da=document.getElementById('dano'); return da&&da.value? +da.value : new Date().getFullYear(); }
+let mesesSel=new Set();
+const MESES_CURTO=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function buildMesesFilter(){
+  const el=document.getElementById('dmesOpts'); if(!el) return;
+  el.innerHTML = MESES_CURTO.slice(1).map((nm,i)=>{const m=i+1;
+    return `<label><input type="checkbox" value="${m}" ${mesesSel.has(m)?'checked':''} onchange="onMesToggle(this)"> ${nm}</label>`;}).join('');
+  updateMesLabel();
+}
+function onMesToggle(cb){ const m=+cb.value; cb.checked?mesesSel.add(m):mesesSel.delete(m); updateMesLabel(); renderDespesas(); }
+function setMesesAll(){ mesesSel.clear(); buildMesesFilter(); renderDespesas(); }
+function updateMesLabel(){ const l=document.getElementById('dmesLabel'); if(!l) return;
+  l.textContent = mesesSel.size===0?'Todos':(mesesSel.size===1?MESES_CURTO[[...mesesSel][0]]:mesesSel.size+' meses'); }
+function toggleMesel(e){ e.stopPropagation(); document.getElementById('dmesPanel').classList.toggle('open'); }
+document.addEventListener('click',e=>{ const w=document.getElementById('dmesWrap');
+  if(w && !w.contains(e.target)){ const p=document.getElementById('dmesPanel'); if(p) p.classList.remove('open'); } });
 function renderFinanceiro(){
   const noT=document.getElementById('finNoTable'), wrap=document.getElementById('finWrap');
   if(!HAS_DESPESAS){ noT.style.display='block'; wrap.style.display='none'; return; }
@@ -797,12 +822,13 @@ function renderFinanceiro(){
   fillDespFilters(); renderFaturadoEmpresa(); renderLimiteMEI(); renderDespesas();
 }
 function fillDespFilters(){
-  const meses=uniq(DB.despesas.map(d=>(d.data||'').slice(0,7))).filter(Boolean).sort().reverse();
-  const elm=document.getElementById('dmes'); const curm=elm.value;
-  elm.innerHTML=`<option value="">Ano todo</option>`+meses.map(m=>{const p=m.split('-');return `<option value="${m}">${p[1]}/${p[0]}</option>`;}).join(''); elm.value=curm;
+  const anos=uniq([new Date().getFullYear(), ...DB.despesas.map(d=>+(d.data||'').slice(0,4)).filter(Boolean)]).sort((a,b)=>b-a);
+  const da=document.getElementById('dano'); const cura=da.value;
+  da.innerHTML=anos.map(a=>`<option>${a}</option>`).join(''); da.value=(cura&&anos.includes(+cura))?cura:String(anos[0]);
+  buildMesesFilter();
   const set=(id,arr,ph)=>{const el=document.getElementById(id); if(!el) return; const cur=el.value;
     el.innerHTML=`<option value="">${ph}</option>`+arr.map(v=>`<option>${v}</option>`).join(''); el.value=cur;};
-  set('demp', uniq([...EMPRESAS, ...DB.despesas.map(d=>d.empresa)]), 'Todas empresas');
+  set('demp', empresaLista(), 'Todas empresas');
   set('dcat', catDespesaLista(), 'Todas categorias');
 }
 function entradasDoAno(ano, empresa){
@@ -812,7 +838,7 @@ function renderFaturadoEmpresa(){
   const ano=finAnoSel();
   document.getElementById('finAno').textContent=ano;
   document.getElementById('finAno2').textContent=ano;
-  const emps=uniq([...EMPRESAS, ...DB.despesas.map(d=>d.empresa)]);
+  const emps=empresaLista();
   document.getElementById('finFaturado').innerHTML = emps.map(e=>{
     const ents=entradasDoAno(ano,e);
     const tot=ents.reduce((s,d)=>s+(d.valor||0),0);
@@ -849,11 +875,14 @@ function renderLimiteMEI(){
 }
 function despFiltradas(){
   const q=(document.getElementById('dq').value||'').toLowerCase();
-  const fm=document.getElementById('dmes').value, fe=document.getElementById('demp').value,
+  const ano=finAnoSel();
+  const fe=document.getElementById('demp').value,
         ft=document.getElementById('dtipo').value, fc=document.getElementById('dcat').value,
         fnf=document.getElementById('dnf').value, fs=document.getElementById('dsit').value;
   return DB.despesas.filter(d=>{
-    if(fm){ if((d.data||'').slice(0,7)!==fm) return false; }
+    const dt=d.data||'';
+    if(dt.slice(0,4)!==String(ano)) return false;
+    if(mesesSel.size && !mesesSel.has(+dt.slice(5,7))) return false;
     if(fe && d.empresa!==fe) return false;
     if(ft && d.tipo!==ft) return false;
     if(fc && d.categoria!==fc) return false;
@@ -890,6 +919,20 @@ function renderDespesas(){
     <td class="center"><button class="btn btn-danger" style="padding:3px 8px;font-size:13px" title="Excluir" onclick="event.stopPropagation();delDespesa(${d.id})">🗑</button></td>
   </tr>`;}).join('');
 }
+function fillCategoriaSelect(val){ fillSelect('d-categoria', catDespesaLista(), val);
+  document.getElementById('d-categoria').insertAdjacentHTML('beforeend','<option value="__novo__">➕ Criar nova categoria…</option>'); }
+function catNovo(){ const sel=document.getElementById('d-categoria'); if(sel.value!=='__novo__') return;
+  const nome=(prompt('Nome da nova categoria:')||'').trim(); if(!nome){ sel.value=''; return; }
+  const atual=catDespesaLista(); const ja=atual.find(x=>x.toLowerCase()===nome.toLowerCase());
+  if(ja){ fillCategoriaSelect(ja); return; }
+  CFG.cat=uniq([...atual,nome]).sort((a,b)=>a.localeCompare(b,'pt-BR')); cfgSalvar('cat'); fillCategoriaSelect(nome); }
+function fillEmpresaSelect(val){ fillSelect('d-empresa', empresaLista(), val);
+  document.getElementById('d-empresa').insertAdjacentHTML('beforeend','<option value="__novo__">➕ Criar nova empresa…</option>'); }
+function empresaNovo(){ const sel=document.getElementById('d-empresa'); if(sel.value!=='__novo__') return;
+  const nome=(prompt('Nome da nova empresa:')||'').trim(); if(!nome){ sel.value=''; return; }
+  const atual=empresaLista(); const ja=atual.find(x=>x.toLowerCase()===nome.toLowerCase());
+  if(ja){ fillEmpresaSelect(ja); return; }
+  CFG.empresas=uniq([...atual,nome]); cfgSalvar('empresas'); fillEmpresaSelect(nome); }
 function openEntrada(){ openDespesa(null,'Entrada'); }
 function openSaida(){ openDespesa(null,'Saída'); }
 function openDespesa(id, tipoNovo){
@@ -903,12 +946,12 @@ function openDespesa(id, tipoNovo){
   document.getElementById('d-tipo').disabled=!HAS_MOV_TIPO;
   document.getElementById('d-data').value=d?(d.data||'').slice(0,10):hoje();
   document.getElementById('d-valor').value=d?(d.valor??''):'';
-  fillSelect('d-categoria', catDespesaLista(), d?d.categoria:'');
-  fillSelect('d-empresa', uniq([...EMPRESAS, ...DB.despesas.map(x=>x.empresa)]), d?d.empresa:'');
+  fillCategoriaSelect(d?d.categoria:'');
+  fillEmpresaSelect(d?d.empresa:'');
   fillSelect('d-forma', FORMAS_PGTO, d?d.forma:'');
   document.getElementById('d-fornecedor').value=d?(d.fornecedor||''):'';
   document.getElementById('d-descricao').value=d?(d.descricao||''):'';
-  document.getElementById('d-nf').checked=d?!!d.nf:false;
+  document.getElementById('d-nf').value=(d&&d.nf)?'sim':'nao';
   document.getElementById('d-fixa').checked=d?!!d.fixa:false;
   document.getElementById('d-pago').checked=d?!!d.pago:true;
   document.getElementById('d-vencimento').value=d?(d.vencimento||'').slice(0,10):'';
@@ -926,10 +969,11 @@ async function saveDespesa(){
   const valor=document.getElementById('d-valor').value;
   if(valor===''){ toast('Informe o valor'); return; }
   const pago=document.getElementById('d-pago').checked;
+  const catv=document.getElementById('d-categoria').value, empv=document.getElementById('d-empresa').value;
   const row={ tipo:document.getElementById('d-tipo').value||'Saída', data:g('d-data')||null, valor:parseFloat(valor),
-    categoria:g('d-categoria')||null, descricao:g('d-descricao')||null, empresa:g('d-empresa')||null,
+    categoria:(catv==='__novo__'?'':catv)||null, descricao:g('d-descricao')||null, empresa:(empv==='__novo__'?'':empv)||null,
     fornecedor:g('d-fornecedor')||null, forma_pagamento:g('d-forma')||null,
-    nota_fiscal:document.getElementById('d-nf').checked, fixa:document.getElementById('d-fixa').checked,
+    nota_fiscal:document.getElementById('d-nf').value==='sim', fixa:document.getElementById('d-fixa').checked,
     pago:pago, vencimento: pago?null:(g('d-vencimento')||null) };
   if(!HAS_MOV_TIPO) delete row.tipo;
   const idv=document.getElementById('d-id').value; let error;
