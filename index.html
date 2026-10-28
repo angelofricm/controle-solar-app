@@ -192,6 +192,7 @@
     <div class="tab" data-view="painel" onclick="setView('painel')">Painel</div>
     <div class="tab" data-view="dashboard" onclick="setView('dashboard')">📊 Dashboard</div>
     <div class="tab" data-view="financeiro" onclick="setView('financeiro')">💸 Financeiro</div>
+    <div class="tab" data-view="pessoal" onclick="setView('pessoal')">🏠 Pessoal <span id="pendBadge" style="display:none;background:#dc2626;color:#fff;border-radius:20px;padding:0 7px;font-size:11px;font-weight:700;margin-left:2px"></span></div>
   </div>
 
   <div id="v-projetos">
@@ -318,6 +319,59 @@
       <div id="finLimite"></div>
     </div>
   </div>
+
+  <div id="v-pessoal" class="hide">
+    <div id="pesNoTable" class="card" style="padding:18px;display:none;background:#fef3c7;color:#92400e">
+      <b>Para ativar o Pessoal, rode uma vez o SQL no Supabase</b> (arquivo add-financeiro.sql).</div>
+    <div id="pesWrap">
+      <div class="toolbar">
+        <input class="search" id="pq" placeholder="Buscar descrição…" oninput="renderPessoal()">
+        <select id="panoSel" onchange="renderPessoal()" title="Ano"></select>
+        <select id="ptipo" onchange="renderPessoal()"><option value="">Entradas e Saídas</option><option value="Entrada">Só entradas</option><option value="Saída">Só saídas</option></select>
+        <select id="pcat" onchange="renderPessoal()"><option value="">Todas categorias</option></select>
+        <span style="flex:1"></span>
+        <button class="btn" style="background:var(--green-t);color:#fff" onclick="openPessoalEntrada()">+ Entrada</button>
+        <button class="btn" style="background:var(--red-t);color:#fff" onclick="openPessoalSaida()">+ Saída</button>
+        <button class="btn btn-ghost" onclick="exportPessoalXlsx()">⤓ Excel</button>
+      </div>
+      <div class="kpis" id="pesResumo" style="margin-bottom:16px"></div>
+      <div id="pesPendentes"></div>
+      <div class="sec-title">Lançamentos pessoais</div>
+      <div id="pesCount" style="font-size:12px;color:var(--muted);margin:2px 0 8px"></div>
+      <div class="card"><div class="tbl-scroll"><table>
+        <thead><tr><th>Data</th><th class="center">Tipo</th><th>Categoria</th><th>Descrição</th>
+          <th class="right">Valor</th><th class="center">Situação</th><th class="center">Ações</th></tr></thead>
+        <tbody id="pesRows"></tbody>
+      </table></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="pessoaOverlay">
+  <div class="modal" style="max-width:560px">
+    <div class="mhead"><h2 id="pes-title">Novo lançamento</h2>
+      <button class="x" onclick="closePessoal()">×</button></div>
+    <div class="mbody">
+      <input type="hidden" id="p-id">
+      <div class="grid3">
+        <div class="field"><label>Tipo</label><select id="p-tipo" onchange="pesTipoToggle()"><option>Saída</option><option>Entrada</option></select></div>
+        <div class="field"><label>Data</label><input id="p-data" type="date"></div>
+        <div class="field"><label>Valor (R$)</label><input id="p-valor" type="number" step="0.01"></div>
+        <div class="field"><label>Categoria</label><select id="p-categoria" onchange="catNovoPessoal()"></select></div>
+        <div class="field"><label>Forma de pagamento</label><select id="p-forma"></select></div>
+        <div class="field"><label>Situação</label>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer"><input type="checkbox" id="p-pago" checked onchange="pesPagoToggle()" style="width:18px;height:18px"> <span id="p-pago-lbl">Já paga</span></label></div>
+      </div>
+      <div class="field full" style="margin-top:12px"><label>Descrição</label><input id="p-descricao"></div>
+      <div class="field" id="p-venc-wrap" style="display:none;margin-top:12px;max-width:220px"><label>Vencimento</label><input id="p-vencimento" type="date"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-danger" id="pes-del" onclick="delPessoal()" style="display:none">Excluir</button>
+      <div class="sp" style="flex:1"></div>
+      <button class="btn btn-line" onclick="closePessoal()">Cancelar</button>
+      <button class="btn" style="background:var(--blue);color:#fff" onclick="savePessoal()">Salvar</button>
+    </div>
+  </div>
 </div>
 
 <div class="overlay" id="overlay">
@@ -374,6 +428,10 @@
     <div class="mbody">
       <div class="sec-title" style="margin-top:0">🔑 Senha</div>
       <button class="btn btn-line" onclick="alterarSenha()">Alterar minha senha</button>
+
+      <div class="sec-title">💾 Backup</div>
+      <button class="btn btn-line" onclick="backupJSON()">⬇ Backup completo do programa (JSON)</button>
+      <div class="muted" style="font-size:12px;margin-top:6px">Baixa tudo num arquivo .json: projetos, A receber, financeiro (empresa + pessoal) e configurações.</div>
 
       <div class="sec-title">Tipos de Serviço <span class="muted" style="font-size:12px;font-weight:400">(ordem alfabética)</span></div>
       <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -460,7 +518,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '27/10/2026 · 18h';   // <-- muda a cada atualização
+const APP_VERSION = '27/10/2026 · 20h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -490,7 +548,7 @@ function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) 
   let v=o[c]; if(v==='') v=null; r[s]=v; }); return r; }
 
 let DB = {projetos:[], receber:[], despesas:[]};
-let HAS_DESPESAS = true, HAS_MOV_TIPO = true;
+let HAS_DESPESAS = true, HAS_MOV_TIPO = true, HAS_PESSOAL = true;
 let view = 'projetos';
 let HAS_PARECER = true;  // vira false se a coluna parecer_acesso ainda nao existir no banco
 let HAS_APROV = true;    // vira false se a coluna data_projeto_aprovado ainda nao existir no banco
@@ -688,14 +746,21 @@ async function loadFinanceiro(){
     HAS_DESPESAS=true;
     DB.despesas=(r.data||[]).map(d=>({id:d.id,data:d.data,valor:d.valor,categoria:d.categoria,
       descricao:d.descricao,empresa:d.empresa,fornecedor:d.fornecedor,forma:d.forma_pagamento,nf:d.nota_fiscal,
-      fixa:d.fixa,pago:d.pago,vencimento:d.vencimento,tipo:d.tipo||'Saída'}));
+      fixa:d.fixa,pago:d.pago,vencimento:d.vencimento,tipo:d.tipo||'Saída',
+      escopo:d.escopo||'empresa',pendente:d.pendente===true}));
     try{ const t=await sb.from('despesas').select('tipo').limit(1); HAS_MOV_TIPO=!t.error; }catch(e){ HAS_MOV_TIPO=false; }
+    try{ const t=await sb.from('despesas').select('escopo').limit(1); HAS_PESSOAL=!t.error; }catch(e){ HAS_PESSOAL=false; }
   }catch(e){ HAS_DESPESAS=false; }
 }
 /* ---------- CONFIGURAÇÕES (tipos de serviço e status) ---------- */
-let CFG = { tipos:null, status:null, cat:null, empresas:null };   // null = usar a lista padrão + o que já existe
+let CFG = { tipos:null, status:null, cat:null, empresas:null, catPessoal:null };   // null = usar a lista padrão + o que já existe
 let HAS_CONFIG = true;                     // vira false se a tabela "config" ainda nao existir
-const CFG_CHAVE = { tipos:'tipos', status:'status', cat:'categorias_despesa', empresas:'empresas' };
+const CFG_CHAVE = { tipos:'tipos', status:'status', cat:'categorias_despesa', empresas:'empresas', catPessoal:'categorias_pessoal' };
+const CAT_PESSOAL_PADRAO = ['Mercado','Aluguel','Água/Luz/Internet','Escola','Saúde','Lazer',
+  'Transporte','Cartão de crédito','Pró-labore','Outros'];
+function catPessoalLista(){ const base=(CFG.catPessoal&&CFG.catPessoal.length)?CFG.catPessoal
+  : uniq([...CAT_PESSOAL_PADRAO, ...DB.despesas.filter(d=>d.escopo==='pessoal').map(d=>d.categoria)]);
+  return uniq(base).sort((a,b)=>a.localeCompare(b,'pt-BR')); }
 function empresaLista(){ const base=(CFG.empresas&&CFG.empresas.length)?CFG.empresas:EMPRESAS;
   return uniq([...base, ...DB.despesas.map(d=>d.empresa), ...DB.projetos.map(p=>p.empresa)]).filter(Boolean); }
 const CAT_DESPESA_PADRAO = ['Serviço','Venda','Material','Combustível/Deslocamento','Ferramentas/Equipamentos',
@@ -705,7 +770,7 @@ const FORMAS_PGTO = ['Pix','Dinheiro','Cartão de débito','Cartão de crédito'
 const MEI_LIMITE = 81000;
 function htmlEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function cfgLocalLer(){ try{ const c=JSON.parse(localStorage.getItem('cs_cfg')||'null');
-  if(c){ ['tipos','status','cat','empresas'].forEach(k=>{ if(Array.isArray(c[k])) CFG[k]=c[k]; }); } }catch(e){} }
+  if(c){ ['tipos','status','cat','empresas','catPessoal'].forEach(k=>{ if(Array.isArray(c[k])) CFG[k]=c[k]; }); } }catch(e){} }
 function cfgLocalSalvar(){ try{ localStorage.setItem('cs_cfg', JSON.stringify(CFG)); }catch(e){} }
 async function loadConfig(){
   cfgLocalLer();
@@ -718,6 +783,7 @@ async function loadConfig(){
     if(Array.isArray(m.status)) CFG.status=m.status;
     if(Array.isArray(m.categorias_despesa)) CFG.cat=m.categorias_despesa;
     if(Array.isArray(m.empresas)) CFG.empresas=m.empresas;
+    if(Array.isArray(m.categorias_pessoal)) CFG.catPessoal=m.categorias_pessoal;
     cfgLocalSalvar();
   }catch(e){ HAS_CONFIG=false; }
 }
@@ -832,7 +898,7 @@ function fillDespFilters(){
   set('dcat', catDespesaLista(), 'Todas categorias');
 }
 function entradasDoAno(ano, empresa){
-  return DB.despesas.filter(d=>d.tipo==='Entrada' && (d.data||'').slice(0,4)===String(ano) && (!empresa||d.empresa===empresa));
+  return DB.despesas.filter(d=>d.escopo!=='pessoal' && d.tipo==='Entrada' && (d.data||'').slice(0,4)===String(ano) && (!empresa||d.empresa===empresa));
 }
 function renderFaturadoEmpresa(){
   const ano=finAnoSel();
@@ -880,6 +946,7 @@ function despFiltradas(){
         ft=document.getElementById('dtipo').value, fc=document.getElementById('dcat').value,
         fnf=document.getElementById('dnf').value, fs=document.getElementById('dsit').value;
   return DB.despesas.filter(d=>{
+    if(d.escopo==='pessoal') return false;
     const dt=d.data||'';
     if(dt.slice(0,4)!==String(ano)) return false;
     if(mesesSel.size && !mesesSel.has(+dt.slice(5,7))) return false;
@@ -980,7 +1047,13 @@ async function saveDespesa(){
   if(idv){ ({error}=await sb.from('despesas').update(row).eq('id',+idv)); }
   else { ({error}=await sb.from('despesas').insert(row)); }
   if(error){ toast('Erro ao salvar: '+error.message); return; }
-  await loadFinanceiro(); closeDespesa(); renderFinanceiro(); toast('Lançamento salvo ✔');
+  let extra='';
+  if(!idv && HAS_PESSOAL && row.tipo==='Saída' && (row.categoria||'').toLowerCase()==='pró-labore'){
+    const {error:e2}=await sb.from('despesas').insert({escopo:'pessoal',tipo:'Entrada',categoria:'Pró-labore',
+      data:row.data,valor:row.valor,descricao:'Pró-labore recebido da empresa',pendente:true,pago:true,nota_fiscal:false});
+    if(!e2) extra=' — pró-labore enviado p/ aceite no Pessoal 🔔';
+  }
+  await loadFinanceiro(); closeDespesa(); renderFinanceiro(); atualizaBadgePendentes(); toast('Lançamento salvo ✔'+extra);
 }
 async function delDespesa(id){
   if(!confirm('Excluir este lançamento?')) return;
@@ -1003,6 +1076,150 @@ function exportDespesasXlsx(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),'Financeiro');
   const blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   dl(blob,`financeiro-${carimbo()}.xlsx`); toast('Financeiro exportado ✔');
+}
+
+/* ---------- PESSOAL (caixa pessoal + aceite de pró-labore) ---------- */
+function pessoais(){ return DB.despesas.filter(d=>d.escopo==='pessoal'); }
+function atualizaBadgePendentes(){ const b=document.getElementById('pendBadge'); if(!b) return;
+  const n=pessoais().filter(d=>d.pendente).length;
+  if(n>0){ b.textContent=n; b.style.display='inline-block'; } else b.style.display='none'; }
+function pessoalFiltradas(){
+  const q=(document.getElementById('pq').value||'').toLowerCase();
+  const ano=document.getElementById('panoSel').value;
+  const ft=document.getElementById('ptipo').value, fc=document.getElementById('pcat').value;
+  return pessoais().filter(d=>{
+    if(d.pendente) return false;
+    if(ano && (d.data||'').slice(0,4)!==ano) return false;
+    if(ft && d.tipo!==ft) return false;
+    if(fc && d.categoria!==fc) return false;
+    if(q){ const b=`${d.descricao||''} ${d.categoria||''}`.toLowerCase(); if(!b.includes(q)) return false; }
+    return true;
+  });
+}
+function renderPessoal(){
+  const noT=document.getElementById('pesNoTable'), wrap=document.getElementById('pesWrap');
+  if(!HAS_PESSOAL){ noT.style.display='block'; wrap.style.display='none'; return; }
+  noT.style.display='none'; wrap.style.display='block';
+  atualizaBadgePendentes();
+  const anos=uniq([new Date().getFullYear(), ...pessoais().map(d=>+(d.data||'').slice(0,4)).filter(Boolean)]).sort((a,b)=>b-a);
+  const da=document.getElementById('panoSel'); const cura=da.value;
+  da.innerHTML=`<option value="">Todos os anos</option>`+anos.map(a=>`<option>${a}</option>`).join(''); da.value=cura;
+  const pc=document.getElementById('pcat'); const curc=pc.value;
+  pc.innerHTML=`<option value="">Todas categorias</option>`+catPessoalLista().map(c=>`<option>${c}</option>`).join(''); pc.value=curc;
+  const pend=pessoais().filter(d=>d.pendente).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const pe=document.getElementById('pesPendentes');
+  pe.innerHTML = pend.length?`<div class="card" style="padding:12px 14px;margin-bottom:14px;background:#fffbeb;border-color:#fde68a">
+      <div style="font-weight:700;color:#92400e;margin-bottom:6px">🔔 Pró-labore para aceitar (${pend.length})</div>
+      ${pend.map(d=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;border-top:1px solid #fde68a">
+        <span style="flex:1;min-width:150px">${d2br(d.data)} — <b>${moneyC(d.valor)}</b> <span class="muted">${d.descricao||''}</span></span>
+        <button class="btn" style="background:var(--green-t);color:#fff;padding:5px 12px" onclick="aceitarProlabore(${d.id})">Aceitar</button>
+        <button class="btn btn-danger" style="padding:5px 12px" onclick="recusarProlabore(${d.id})">Recusar</button>
+      </div>`).join('')}</div>`:'';
+  let rows=pessoalFiltradas().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const ent=rows.filter(d=>d.tipo==='Entrada').reduce((s,d)=>s+(d.valor||0),0);
+  const sai=rows.filter(d=>d.tipo!=='Entrada').reduce((s,d)=>s+(d.valor||0),0);
+  document.getElementById('pesResumo').innerHTML=
+    `<div class="kpi"><div class="l">ENTRADAS</div><div class="v" style="color:var(--green-t)">${moneyC(ent)}</div></div>
+     <div class="kpi"><div class="l">SAÍDAS</div><div class="v" style="color:var(--red-t)">${moneyC(sai)}</div></div>
+     <div class="kpi"><div class="l">SALDO</div><div class="v" style="color:${(ent-sai)<0?'var(--red-t)':'var(--blue-d)'}">${moneyC(ent-sai)}</div></div>`;
+  document.getElementById('pesCount').textContent=`${rows.length} lançamento(s)`;
+  const tb=document.getElementById('pesRows');
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="7" class="empty">Nenhum lançamento pessoal.</td></tr>`; return; }
+  tb.innerHTML=rows.map(d=>{ const ent=d.tipo==='Entrada';
+    return `<tr onclick="openPessoal(${d.id})" style="cursor:pointer">
+    <td>${d2br(d.data)}</td>
+    <td class="center">${ent?'<span class="chip green">Entrada</span>':'<span class="chip" style="background:var(--red-b);color:var(--red-t)">Saída</span>'}</td>
+    <td>${d.categoria||'—'}</td>
+    <td>${d.descricao||'—'}</td>
+    <td class="right" style="color:${ent?'var(--green-t)':'var(--red-t)'};font-weight:700">${ent?'+ ':'− '}${moneyC(d.valor)}</td>
+    <td class="center">${d.pago?`<span class="chip green">${ent?'Recebido':'Pago'}</span>`:`<span class="chip amber">${ent?'A receber':'A pagar'}${d.vencimento?' '+d2br(d.vencimento):''}</span>`}</td>
+    <td class="center"><button class="btn btn-danger" style="padding:3px 8px;font-size:13px" onclick="event.stopPropagation();delPessoal(${d.id})">🗑</button></td>
+  </tr>`;}).join('');
+}
+async function aceitarProlabore(id){
+  const {error}=await sb.from('despesas').update({pendente:false}).eq('id',id);
+  if(error){ toast('Erro: '+error.message); return; }
+  await loadFinanceiro(); renderPessoal(); toast('Pró-labore aceito ✔');
+}
+async function recusarProlabore(id){
+  if(!confirm('Recusar e remover este pró-labore do Pessoal?')) return;
+  const {error}=await sb.from('despesas').delete().eq('id',id);
+  if(error){ toast('Erro: '+error.message); return; }
+  await loadFinanceiro(); renderPessoal(); toast('Pró-labore recusado');
+}
+function fillCatPessoalSelect(val){ fillSelect('p-categoria', catPessoalLista(), val);
+  document.getElementById('p-categoria').insertAdjacentHTML('beforeend','<option value="__novo__">➕ Criar nova categoria…</option>'); }
+function catNovoPessoal(){ const sel=document.getElementById('p-categoria'); if(sel.value!=='__novo__') return;
+  const nome=(prompt('Nome da nova categoria pessoal:')||'').trim(); if(!nome){ sel.value=''; return; }
+  const atual=catPessoalLista(); const ja=atual.find(x=>x.toLowerCase()===nome.toLowerCase());
+  if(ja){ fillCatPessoalSelect(ja); return; }
+  CFG.catPessoal=uniq([...atual,nome]).sort((a,b)=>a.localeCompare(b,'pt-BR')); cfgSalvar('catPessoal'); fillCatPessoalSelect(nome); }
+function openPessoalEntrada(){ openPessoal(null,'Entrada'); }
+function openPessoalSaida(){ openPessoal(null,'Saída'); }
+function openPessoal(id, tipoNovo){
+  if(!HAS_PESSOAL){ renderPessoal(); return; }
+  const d=id?DB.despesas.find(x=>x.id===id):null;
+  const tipo=d?d.tipo:(tipoNovo||'Saída');
+  document.getElementById('pes-title').textContent=(d?'Editar ':'Nova ')+(tipo==='Entrada'?'entrada':'saída')+' pessoal';
+  document.getElementById('pes-del').style.display=d?'inline-flex':'none';
+  document.getElementById('p-id').value=d?d.id:'';
+  fillSelect('p-tipo',['Saída','Entrada'], tipo);
+  document.getElementById('p-data').value=d?(d.data||'').slice(0,10):hoje();
+  document.getElementById('p-valor').value=d?(d.valor??''):'';
+  fillCatPessoalSelect(d?d.categoria:'');
+  fillSelect('p-forma', FORMAS_PGTO, d?d.forma:'');
+  document.getElementById('p-descricao').value=d?(d.descricao||''):'';
+  document.getElementById('p-pago').checked=d?!!d.pago:true;
+  document.getElementById('p-vencimento').value=d?(d.vencimento||'').slice(0,10):'';
+  pesTipoToggle(); pesPagoToggle();
+  document.getElementById('pessoaOverlay').classList.add('open');
+}
+function pesTipoToggle(){ const ent=document.getElementById('p-tipo').value==='Entrada';
+  document.getElementById('p-pago-lbl').textContent=ent?'Já recebida':'Já paga'; pesPagoToggle(); }
+function pesPagoToggle(){ document.getElementById('p-venc-wrap').style.display=document.getElementById('p-pago').checked?'none':'block'; }
+function closePessoal(){ document.getElementById('pessoaOverlay').classList.remove('open'); }
+async function savePessoal(){
+  const g=id=>document.getElementById(id).value.trim();
+  const valor=document.getElementById('p-valor').value;
+  if(valor===''){ toast('Informe o valor'); return; }
+  const pago=document.getElementById('p-pago').checked;
+  const catv=document.getElementById('p-categoria').value;
+  const row={ escopo:'pessoal', tipo:document.getElementById('p-tipo').value||'Saída', data:g('p-data')||null,
+    valor:parseFloat(valor), categoria:(catv==='__novo__'?'':catv)||null, descricao:g('p-descricao')||null,
+    forma_pagamento:g('p-forma')||null, pago:pago, vencimento: pago?null:(g('p-vencimento')||null), pendente:false };
+  const idv=document.getElementById('p-id').value; let error;
+  if(idv){ ({error}=await sb.from('despesas').update(row).eq('id',+idv)); }
+  else { ({error}=await sb.from('despesas').insert(row)); }
+  if(error){ toast('Erro ao salvar: '+error.message); return; }
+  await loadFinanceiro(); closePessoal(); renderPessoal(); toast('Lançamento pessoal salvo ✔');
+}
+async function delPessoal(id){
+  if(!confirm('Excluir este lançamento pessoal?')) return;
+  const {error}=await sb.from('despesas').delete().eq('id',id);
+  if(error){ toast('Erro: '+error.message); return; }
+  await loadFinanceiro(); renderPessoal(); toast('Lançamento excluído');
+}
+function exportPessoalXlsx(){
+  const rows=pessoalFiltradas().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  const head=['Data','Tipo','Categoria','Descrição','Forma','Situação','Vencimento','Valor'];
+  let tEnt=0,tSai=0; rows.forEach(d=>{ if(d.tipo==='Entrada') tEnt+=(d.valor||0); else tSai+=(d.valor||0); });
+  const aoa=[['FINANCEIRO PESSOAL — Controle Solar'],['Gerado em',carimboLegivel()],[], head,
+    ...rows.map(d=>[d2br(d.data),d.tipo||'Saída',d.categoria||'',d.descricao||'',d.forma||'',
+      d.pago?(d.tipo==='Entrada'?'Recebido':'Pago'):(d.tipo==='Entrada'?'A receber':'A pagar'),
+      d.vencimento?d2br(d.vencimento):'',(d.tipo==='Entrada'?1:-1)*(d.valor||0)]),
+    [],['','','','','','','ENTRADAS',tEnt],['','','','','','','SAÍDAS',tSai],['','','','','','','SALDO',tEnt-tSai]];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),'Pessoal');
+  const blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  dl(blob,`pessoal-${carimbo()}.xlsx`); toast('Pessoal exportado ✔');
+}
+
+/* ---------- BACKUP COMPLETO (JSON de todo o programa) ---------- */
+function backupJSON(){
+  const dados={ app:'Controle Solar', backup_em:carimboLegivel(), versao:APP_VERSION,
+    projetos:DB.projetos, receber:DB.receber, despesas:DB.despesas, config:CFG };
+  const blob=new Blob([JSON.stringify(dados,null,1)],{type:'application/json'});
+  dl(blob, `backup-controle-solar-${carimbo()}.json`);
+  toast('Backup completo (JSON) baixado ✔');
 }
 
 function hoje(){ return new Date().toISOString().slice(0,10); }
@@ -1302,12 +1519,13 @@ async function corrigirCobranca(recId, projId){
 function setView(v){
   view=v;
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));
-  ['projetos','clientes','painel','dashboard','financeiro'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hide',x!==v));
+  ['projetos','clientes','painel','dashboard','financeiro','pessoal'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hide',x!==v));
   if(v==='projetos') render();
   if(v==='clientes') renderClientes();
   if(v==='painel') renderPainel();
   if(v==='dashboard') renderDashboard();
   if(v==='financeiro') renderFinanceiro();
+  if(v==='pessoal') renderPessoal();
 }
 function empBarColor(e){ if(e==='FR Soluções Elétricas')return '#2563eb';
   if(e==='Pontual Elétrica')return '#16a34a'; if(e==='Nordeste Solar')return '#ea580c'; return '#64748b'; }
@@ -1705,7 +1923,7 @@ function exportReceberXlsx(){
   toast('A Receber exportado para Excel ✔');
 }
 
-function refresh(){ renderKpis(); fillFilters(); setView(view); }
+function refresh(){ renderKpis(); fillFilters(); atualizaBadgePendentes(); setView(view); }
 /* clicar fora NÃO fecha o cadastro — só fecha em Cancelar, no ✕ ou ao Salvar */
 ['lg-pass','lg-code','lg-ecode'].forEach(id=>
   document.getElementById(id).addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); loginAction(); } }));
