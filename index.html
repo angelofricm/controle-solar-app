@@ -327,7 +327,7 @@
       <div class="toolbar">
         <input class="search" id="pq" placeholder="Buscar descrição…" oninput="renderPessoal()">
         <select id="panoSel" onchange="renderPessoal()" title="Ano"></select>
-        <select id="ptipo" onchange="renderPessoal()"><option value="">Entradas e Saídas</option><option value="Entrada">Só entradas</option><option value="Saída">Só saídas</option></select>
+        <select id="ptipo" onchange="renderPessoal()"><option value="">Todos os tipos</option><option value="Entrada">Só entradas</option><option value="Saída">Só saídas</option><option value="Investimento">Só investimentos</option></select>
         <select id="pcat" onchange="renderPessoal()"><option value="">Todas categorias</option></select>
         <span style="flex:1"></span>
         <button class="btn" style="background:var(--green-t);color:#fff" onclick="openPessoalEntrada()">+ Entrada</button>
@@ -354,7 +354,7 @@
     <div class="mbody">
       <input type="hidden" id="p-id">
       <div class="grid3">
-        <div class="field"><label>Tipo</label><select id="p-tipo" onchange="pesTipoToggle()"><option>Saída</option><option>Entrada</option></select></div>
+        <div class="field"><label>Tipo</label><select id="p-tipo" onchange="pesTipoToggle()"><option>Saída</option><option>Entrada</option><option>Investimento</option></select></div>
         <div class="field"><label>Data</label><input id="p-data" type="date"></div>
         <div class="field"><label>Valor (R$)</label><input id="p-valor" type="number" step="0.01"></div>
         <div class="field"><label>Categoria</label><select id="p-categoria" onchange="catNovoPessoal()"></select></div>
@@ -518,7 +518,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '27/10/2026 · 21h';   // <-- muda a cada atualização
+const APP_VERSION = '27/10/2026 · 22h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -757,7 +757,8 @@ let CFG = { tipos:null, status:null, cat:null, empresas:null, catPessoal:null };
 let HAS_CONFIG = true;                     // vira false se a tabela "config" ainda nao existir
 const CFG_CHAVE = { tipos:'tipos', status:'status', cat:'categorias_despesa', empresas:'empresas', catPessoal:'categorias_pessoal' };
 const CAT_PESSOAL_PADRAO = ['Mercado','Aluguel','Água/Luz/Internet','Escola','Saúde','Lazer',
-  'Transporte','Cartão de crédito','Pró-labore','Outros'];
+  'Transporte','Cartão de crédito','Pró-labore','Poupança','Reserva de emergência','Tesouro Direto',
+  'CDB/Renda Fixa','Ações/Fundos','Outros'];
 function catPessoalLista(){ const base=(CFG.catPessoal&&CFG.catPessoal.length)?CFG.catPessoal
   : uniq([...CAT_PESSOAL_PADRAO, ...DB.despesas.filter(d=>d.escopo==='pessoal').map(d=>d.categoria)]);
   return uniq(base).sort((a,b)=>a.localeCompare(b,'pt-BR')); }
@@ -1117,22 +1118,32 @@ function renderPessoal(){
       </div>`).join('')}</div>`:'';
   let rows=pessoalFiltradas().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   const ent=rows.filter(d=>d.tipo==='Entrada').reduce((s,d)=>s+(d.valor||0),0);
-  const sai=rows.filter(d=>d.tipo!=='Entrada').reduce((s,d)=>s+(d.valor||0),0);
+  const sai=rows.filter(d=>d.tipo==='Saída').reduce((s,d)=>s+(d.valor||0),0);
+  const inv=rows.filter(d=>d.tipo==='Investimento').reduce((s,d)=>s+(d.valor||0),0);
+  const saldo=ent-sai-inv;
   document.getElementById('pesResumo').innerHTML=
     `<div class="kpi"><div class="l">ENTRADAS</div><div class="v" style="color:var(--green-t)">${moneyC(ent)}</div></div>
      <div class="kpi"><div class="l">SAÍDAS</div><div class="v" style="color:var(--red-t)">${moneyC(sai)}</div></div>
-     <div class="kpi"><div class="l">SALDO</div><div class="v" style="color:${(ent-sai)<0?'var(--red-t)':'var(--blue-d)'}">${moneyC(ent-sai)}</div></div>`;
+     <div class="kpi"><div class="l">INVESTIDO</div><div class="v" style="color:var(--blue-d)">${moneyC(inv)}</div></div>
+     <div class="kpi"><div class="l">SALDO</div><div class="v" style="color:${saldo<0?'var(--red-t)':'var(--blue-d)'}">${moneyC(saldo)}</div></div>`;
   document.getElementById('pesCount').textContent=`${rows.length} lançamento(s)`;
   const tb=document.getElementById('pesRows');
   if(!rows.length){ tb.innerHTML=`<tr><td colspan="7" class="empty">Nenhum lançamento pessoal.</td></tr>`; return; }
-  tb.innerHTML=rows.map(d=>{ const ent=d.tipo==='Entrada';
+  tb.innerHTML=rows.map(d=>{ const t=d.tipo;
+    const chip = t==='Entrada'?'<span class="chip green">Entrada</span>'
+      : t==='Investimento'?'<span class="chip blue">Investimento</span>'
+      : '<span class="chip" style="background:var(--red-b);color:var(--red-t)">Saída</span>';
+    const cor = t==='Entrada'?'var(--green-t)':(t==='Investimento'?'var(--blue-d)':'var(--red-t)');
+    const sinal = t==='Entrada'?'+ ':'− ';
+    const sitPago = t==='Entrada'?'Recebido':(t==='Investimento'?'Aplicado':'Pago');
+    const sitPend = t==='Entrada'?'A receber':(t==='Investimento'?'A aplicar':'A pagar');
     return `<tr onclick="openPessoal(${d.id})" style="cursor:pointer">
     <td>${d2br(d.data)}</td>
-    <td class="center">${ent?'<span class="chip green">Entrada</span>':'<span class="chip" style="background:var(--red-b);color:var(--red-t)">Saída</span>'}</td>
+    <td class="center">${chip}</td>
     <td>${d.categoria||'—'}</td>
     <td>${d.descricao||'—'}</td>
-    <td class="right" style="color:${ent?'var(--green-t)':'var(--red-t)'};font-weight:700">${ent?'+ ':'− '}${moneyC(d.valor)}</td>
-    <td class="center">${d.pago?`<span class="chip green">${ent?'Recebido':'Pago'}</span>`:`<span class="chip amber">${ent?'A receber':'A pagar'}${d.vencimento?' '+d2br(d.vencimento):''}</span>`}</td>
+    <td class="right" style="color:${cor};font-weight:700">${sinal}${moneyC(d.valor)}</td>
+    <td class="center">${d.pago?`<span class="chip green">${sitPago}</span>`:`<span class="chip amber">${sitPend}${d.vencimento?' '+d2br(d.vencimento):''}</span>`}</td>
     <td class="center"><button class="btn btn-danger" style="padding:3px 8px;font-size:13px" onclick="event.stopPropagation();delPessoal(${d.id})">🗑</button></td>
   </tr>`;}).join('');
 }
@@ -1163,7 +1174,7 @@ function openPessoal(id, tipoNovo){
   document.getElementById('pes-title').textContent=(d?'Editar ':'Nova ')+(tipo==='Entrada'?'entrada':'saída')+' pessoal';
   document.getElementById('pes-del').style.display=d?'inline-flex':'none';
   document.getElementById('p-id').value=d?d.id:'';
-  fillSelect('p-tipo',['Saída','Entrada'], tipo);
+  fillSelect('p-tipo',['Saída','Entrada','Investimento'], tipo);
   document.getElementById('p-data').value=d?(d.data||'').slice(0,10):hoje();
   document.getElementById('p-valor').value=d?(d.valor??''):'';
   fillCatPessoalSelect(d?d.categoria:'');
@@ -1174,8 +1185,8 @@ function openPessoal(id, tipoNovo){
   pesTipoToggle(); pesPagoToggle();
   document.getElementById('pessoaOverlay').classList.add('open');
 }
-function pesTipoToggle(){ const ent=document.getElementById('p-tipo').value==='Entrada';
-  document.getElementById('p-pago-lbl').textContent=ent?'Já recebida':'Já paga'; pesPagoToggle(); }
+function pesTipoToggle(){ const t=document.getElementById('p-tipo').value;
+  document.getElementById('p-pago-lbl').textContent = t==='Entrada'?'Já recebida':(t==='Investimento'?'Já aplicada':'Já paga'); pesPagoToggle(); }
 function pesPagoToggle(){ document.getElementById('p-venc-wrap').style.display=document.getElementById('p-pago').checked?'none':'block'; }
 function closePessoal(){ document.getElementById('pessoaOverlay').classList.remove('open'); }
 async function savePessoal(){
@@ -1202,12 +1213,15 @@ async function delPessoal(id){
 function exportPessoalXlsx(){
   const rows=pessoalFiltradas().sort((a,b)=>(b.data||'').localeCompare(a.data||''));
   const head=['Data','Tipo','Categoria','Descrição','Forma','Situação','Vencimento','Valor'];
-  let tEnt=0,tSai=0; rows.forEach(d=>{ if(d.tipo==='Entrada') tEnt+=(d.valor||0); else tSai+=(d.valor||0); });
+  let tEnt=0,tSai=0,tInv=0; rows.forEach(d=>{ const v=d.valor||0;
+    if(d.tipo==='Entrada') tEnt+=v; else if(d.tipo==='Investimento') tInv+=v; else tSai+=v; });
+  const sitTxt=d=>d.pago?(d.tipo==='Entrada'?'Recebido':(d.tipo==='Investimento'?'Aplicado':'Pago'))
+    :(d.tipo==='Entrada'?'A receber':(d.tipo==='Investimento'?'A aplicar':'A pagar'));
   const aoa=[['FINANCEIRO PESSOAL — Controle Solar'],['Gerado em',carimboLegivel()],[], head,
     ...rows.map(d=>[d2br(d.data),d.tipo||'Saída',d.categoria||'',d.descricao||'',d.forma||'',
-      d.pago?(d.tipo==='Entrada'?'Recebido':'Pago'):(d.tipo==='Entrada'?'A receber':'A pagar'),
-      d.vencimento?d2br(d.vencimento):'',(d.tipo==='Entrada'?1:-1)*(d.valor||0)]),
-    [],['','','','','','','ENTRADAS',tEnt],['','','','','','','SAÍDAS',tSai],['','','','','','','SALDO',tEnt-tSai]];
+      sitTxt(d), d.vencimento?d2br(d.vencimento):'',(d.tipo==='Entrada'?1:-1)*(d.valor||0)]),
+    [],['','','','','','','ENTRADAS',tEnt],['','','','','','','SAÍDAS',tSai],
+    ['','','','','','','INVESTIDO',tInv],['','','','','','','SALDO',tEnt-tSai-tInv]];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa),'Pessoal');
   const blob=new Blob([XLSX.write(wb,{type:'array',bookType:'xlsx'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   dl(blob,`pessoal-${carimbo()}.xlsx`); toast('Pessoal exportado ✔');
