@@ -213,6 +213,8 @@
         <option value="faturados">Faturados ✅</option>
         <option value="falta">Falta faturar</option>
       </select>
+      <select id="favSel" onchange="aplicarFiltroFav(this.value)" title="Filtros favoritos"><option value="">⭐ Filtros salvos</option></select>
+      <button class="btn btn-line" onclick="salvarFiltroFav()" title="Salvar os filtros atuais">＋ Salvar filtro</button>
     </div>
     <div class="filter-note" id="fnote"></div>
     <div id="pcount" style="font-size:12px;color:var(--muted);margin:2px 0 10px"></div>
@@ -261,20 +263,26 @@
   </div>
 
   <div id="v-dashboard" class="hide">
-    <div class="sec-title">💡 Estudo — tabela de valores por potência (kWp)</div>
-    <div class="card" style="padding:16px 18px;margin-bottom:18px"><div id="dashPlaca"></div></div>
-    <div class="kpis" id="dashCards" style="margin-bottom:18px"></div>
-    <div class="sec-title">Projetos por empresa</div>
-    <div class="card" style="padding:14px 18px"><div id="dashProj"></div></div>
-    <div class="sec-title">A receber por empresa (pendente)</div>
-    <div class="card" style="padding:14px 18px"><div id="dashReceber"></div></div>
-    <div class="sec-title">Valor total por empresa</div>
-    <div class="card" style="padding:14px 18px"><div id="dashValor"></div></div>
-    <div class="sec-title">Status dos projetos por empresa</div>
-    <div class="card" style="padding:4px 0"><div style="overflow-x:auto"><table>
-      <thead><tr><th>Empresa</th><th class="center">Em andamento</th><th class="center">Concluídos</th>
-        <th class="center">Total</th><th class="right">Valor</th></tr></thead>
-      <tbody id="dashStatus"></tbody></table></div></div>
+    <div class="dash-block" data-block="placa">
+      <div class="sec-title">💡 Estudo — tabela de valores por potência (kWp)</div>
+      <div class="card" style="padding:16px 18px;margin-bottom:18px"><div id="dashPlaca"></div></div></div>
+    <div class="dash-block" data-block="cards">
+      <div class="kpis" id="dashCards" style="margin-bottom:18px"></div></div>
+    <div class="dash-block" data-block="proj">
+      <div class="sec-title">Projetos por empresa</div>
+      <div class="card" style="padding:14px 18px"><div id="dashProj"></div></div></div>
+    <div class="dash-block" data-block="receber">
+      <div class="sec-title">A receber por empresa (pendente)</div>
+      <div class="card" style="padding:14px 18px"><div id="dashReceber"></div></div></div>
+    <div class="dash-block" data-block="valor">
+      <div class="sec-title">Valor total por empresa</div>
+      <div class="card" style="padding:14px 18px"><div id="dashValor"></div></div></div>
+    <div class="dash-block" data-block="status">
+      <div class="sec-title">Status dos projetos por empresa</div>
+      <div class="card" style="padding:4px 0"><div style="overflow-x:auto"><table>
+        <thead><tr><th>Empresa</th><th class="center">Em andamento</th><th class="center">Concluídos</th>
+          <th class="center">Total</th><th class="right">Valor</th></tr></thead>
+        <tbody id="dashStatus"></tbody></table></div></div></div>
   </div>
 
   <div id="v-financeiro" class="hide">
@@ -467,6 +475,12 @@
       </div>
       <div id="cfg-lista-cat" class="cfg-list"></div>
 
+      <div class="sec-title">📊 Blocos do Dashboard <span class="muted" style="font-size:12px;font-weight:400">(ligar/desligar)</span></div>
+      <div id="cfg-dash" class="cfg-list" style="max-height:none"></div>
+
+      <div class="sec-title">⭐ Filtros favoritos (Projetos)</div>
+      <div id="cfg-lista-fav" class="cfg-list"></div>
+
       <p id="cfg-aviso" style="font-size:12px;color:var(--amber-t);margin-top:14px"></p>
     </div>
     <div class="mfoot">
@@ -531,7 +545,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '31/10/2026 · 12h';   // <-- muda a cada atualização
+const APP_VERSION = '31/10/2026 · 14h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -769,9 +783,11 @@ async function loadFinanceiro(){
   }catch(e){ HAS_DESPESAS=false; }
 }
 /* ---------- CONFIGURAÇÕES (tipos de serviço e status) ---------- */
-let CFG = { tipos:null, status:null, sit:null, cat:null, empresas:null, catPessoal:null };   // null = usar a lista padrão + o que já existe
+let CFG = { tipos:null, status:null, sit:null, cat:null, empresas:null, catPessoal:null, filtros:null, dash:null };
 let HAS_CONFIG = true;                     // vira false se a tabela "config" ainda nao existir
-const CFG_CHAVE = { tipos:'tipos', status:'status', sit:'situacoes', cat:'categorias_despesa', empresas:'empresas', catPessoal:'categorias_pessoal' };
+const CFG_CHAVE = { tipos:'tipos', status:'status', sit:'situacoes', cat:'categorias_despesa', empresas:'empresas', catPessoal:'categorias_pessoal', filtros:'filtros_projetos', dash:'dashboard_blocos' };
+const DASH_BLOCKS = [['placa','Estudo por potência (kWp)'],['cards','Cartões por empresa'],['proj','Projetos por empresa'],['receber','A receber por empresa'],['valor','Valor total por empresa'],['status','Status por empresa']];
+function dashAtivo(key){ return (CFG.dash && CFG.dash.length) ? CFG.dash.includes(key) : true; }
 function _norm(s){ return (s||'').toString().trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' '); }
 const CAT_PESSOAL_PADRAO = ['Mercado','Aluguel','Água/Luz/Internet','Escola','Saúde','Lazer',
   'Transporte','Cartão de crédito','Pró-labore','Poupança','Reserva de emergência','Tesouro Direto',
@@ -788,7 +804,7 @@ const FORMAS_PGTO = ['Pix','Dinheiro','Cartão de débito','Cartão de crédito'
 const MEI_LIMITE = 81000;
 function htmlEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function cfgLocalLer(){ try{ const c=JSON.parse(localStorage.getItem('cs_cfg')||'null');
-  if(c){ ['tipos','status','sit','cat','empresas','catPessoal'].forEach(k=>{ if(Array.isArray(c[k])) CFG[k]=c[k]; }); } }catch(e){} }
+  if(c){ ['tipos','status','sit','cat','empresas','catPessoal','filtros','dash'].forEach(k=>{ if(Array.isArray(c[k])) CFG[k]=c[k]; }); } }catch(e){} }
 function cfgLocalSalvar(){ try{ localStorage.setItem('cs_cfg', JSON.stringify(CFG)); }catch(e){} }
 async function loadConfig(){
   cfgLocalLer();
@@ -803,6 +819,8 @@ async function loadConfig(){
     if(Array.isArray(m.empresas)) CFG.empresas=m.empresas;
     if(Array.isArray(m.categorias_pessoal)) CFG.catPessoal=m.categorias_pessoal;
     if(Array.isArray(m.situacoes)) CFG.sit=m.situacoes;
+    if(Array.isArray(m.filtros_projetos)) CFG.filtros=m.filtros_projetos;
+    if(Array.isArray(m.dashboard_blocos)) CFG.dash=m.dashboard_blocos;
     cfgLocalSalvar();
   }catch(e){ HAS_CONFIG=false; }
 }
@@ -834,7 +852,7 @@ async function dedupTipos(){
   CFG.tipos=out.sort((a,b)=>a.localeCompare(b,'pt-BR')); await cfgSalvar('tipos'); renderCfgListas();
   toast((atual.length-out.length)+' duplicado(s) removido(s) ✔');
 }
-let _cfgTipos=[], _cfgStatus=[], _cfgCat=[], _cfgSit=[];
+let _cfgTipos=[], _cfgStatus=[], _cfgCat=[], _cfgSit=[], _cfgFav=[];
 async function editarEmail(){
   let atual=''; try{ const {data}=await sb.auth.getUser(); atual=data&&data.user?data.user.email:''; }catch(e){}
   const novo=(prompt('Novo e-mail de acesso:\n(atual: '+(atual||'—')+')', atual)||'').trim();
@@ -866,6 +884,41 @@ function renderCfgListas(){
   _cfgCat=catDespesaLista();
   const elc=document.getElementById('cfg-lista-cat');
   if(elc) elc.innerHTML = _cfgCat.map((c,i)=>item(c,'delCatCfg',i)).join('') || '<div class="muted" style="padding:6px">Nenhuma.</div>';
+  const ed=document.getElementById('cfg-dash');
+  if(ed) ed.innerHTML=DASH_BLOCKS.map(([k,nm])=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 6px"><input type="checkbox" ${dashAtivo(k)?'checked':''} onchange="toggleDashBlock('${k}',this.checked)" style="width:auto;margin:0"> ${nm}</label>`).join('');
+  _cfgFav=(CFG.filtros||[]).map(f=>f.nome);
+  const ef=document.getElementById('cfg-lista-fav');
+  if(ef) ef.innerHTML = _cfgFav.length? _cfgFav.map((n,i)=>item(n,'delFavCfg',i)).join('') : '<div class="muted" style="padding:6px">Nenhum.</div>';
+}
+async function toggleDashBlock(k,on){
+  let arr=(CFG.dash&&CFG.dash.length)?CFG.dash.slice():DASH_BLOCKS.map(b=>b[0]);
+  if(on){ if(!arr.includes(k)) arr.push(k); } else arr=arr.filter(x=>x!==k);
+  CFG.dash=arr; await cfgSalvar('dash');
+}
+async function delFavCfg(i){ const n=_cfgFav[i]; if(n==null) return;
+  CFG.filtros=(CFG.filtros||[]).filter(f=>f.nome!==n); await cfgSalvar('filtros'); renderFiltrosFav(); renderCfgListas(); }
+function renderFiltrosFav(){
+  const sel=document.getElementById('favSel'); if(!sel) return;
+  sel.innerHTML='<option value="">⭐ Filtros salvos</option>'+(CFG.filtros||[]).map(f=>`<option value="${htmlEsc(f.nome)}">${htmlEsc(f.nome)}</option>`).join('');
+}
+async function salvarFiltroFav(){
+  const nome=(prompt('Nome para este filtro:')||'').trim(); if(!nome) return;
+  const f={ nome, status:[...statusSel], sit:document.getElementById('fsit').value,
+    emp:document.getElementById('femp').value, conc:document.getElementById('fconc').value,
+    fat:document.getElementById('ffat').value };
+  const arr=(CFG.filtros||[]).filter(x=>(x.nome||'').toLowerCase()!==nome.toLowerCase()); arr.push(f);
+  CFG.filtros=arr; await cfgSalvar('filtros'); renderFiltrosFav(); toast('Filtro "'+nome+'" salvo ✔');
+}
+function aplicarFiltroFav(nome){
+  if(!nome) return;
+  const f=(CFG.filtros||[]).find(x=>x.nome===nome); if(!f){ return; }
+  statusSel=new Set(f.status||[]); buildStatusFilter();
+  document.getElementById('fsit').value=f.sit||'';
+  document.getElementById('femp').value=f.emp||'';
+  document.getElementById('fconc').value=f.conc||'';
+  document.getElementById('ffat').value=f.fat||'';
+  render();
+  const sel=document.getElementById('favSel'); if(sel) sel.value='';
 }
 async function addCatCfg(){
   const inp=document.getElementById('cfg-novo-cat'); const c=(inp.value||'').trim(); if(!c) return;
@@ -1408,6 +1461,7 @@ function fillFilters(){
   document.getElementById('empresas-modal').innerHTML =
     uniq([...EMPRESAS, ...DB.projetos.map(p=>p.empresa)]).map(e=>`<option value="${e.replace(/"/g,'&quot;')}">`).join('');
   buildStatusFilter();
+  renderFiltrosFav();
 }
 
 /* filtro de Status com seleção múltipla (padrão: só "Projeto Enviado") */
@@ -1628,6 +1682,7 @@ function calcularPreco(){ const k=document.getElementById('calcKwp').value; cons
   document.getElementById('calcResult').textContent = (k===''||v==null) ? '—'
     : v.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}); }
 function renderDashboard(){
+  document.querySelectorAll('#v-dashboard .dash-block').forEach(b=>{ b.style.display = dashAtivo(b.dataset.block)?'':'none'; });
   renderEstudoPlaca();
   const stat={};
   const add=(e)=>{ e=e||'(sem empresa)'; if(!stat[e]) stat[e]={n:0,valor:0,pot:0,rec:0,and:0,conc:0}; return stat[e]; };
