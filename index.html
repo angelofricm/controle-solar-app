@@ -403,8 +403,8 @@
         <div class="field"><label>RC</label>
           <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">
             <input type="checkbox" id="f-rc" style="width:18px;height:18px"> Tem RC</label></div>
-        <div class="field"><label>Status</label><select id="f-status" onchange="onStatusChange()"></select></div>
-        <div class="field"><label>Situação</label><select id="f-situacao"></select></div>
+        <div class="field"><label>Status</label><select id="f-status" onchange="statusSelChange()"></select></div>
+        <div class="field"><label>Situação</label><select id="f-situacao" onchange="situacaoNovo()"></select></div>
         <div class="field"><label>Nº Protocolo</label><input id="f-protocolo"></div>
         <div class="field"><label>Parecer de Acesso</label><input id="f-parecerAcesso"></div>
       </div>
@@ -434,9 +434,10 @@
       <div class="muted" style="font-size:12px;margin-top:6px">Baixa tudo num arquivo .json: projetos, A receber, financeiro (empresa + pessoal) e configurações.</div>
 
       <div class="sec-title">Tipos de Serviço <span class="muted" style="font-size:12px;font-weight:400">(ordem alfabética)</span></div>
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <input id="cfg-novo-tipo" placeholder="Novo tipo de serviço" style="flex:1" onkeydown="if(event.key==='Enter')addTipoCfg()">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input id="cfg-novo-tipo" placeholder="Novo tipo de serviço" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')addTipoCfg()">
         <button class="btn" style="background:var(--blue);color:#fff" onclick="addTipoCfg()">+ Incluir</button>
+        <button class="btn btn-line" onclick="dedupTipos()" title="Remove itens repetidos (ignora maiúsculas/acentos)">🧹 Remover duplicados</button>
       </div>
       <div id="cfg-lista-tipos" class="cfg-list"></div>
 
@@ -446,6 +447,13 @@
         <button class="btn" style="background:var(--blue);color:#fff" onclick="addStatusCfg()">+ Incluir</button>
       </div>
       <div id="cfg-lista-status" class="cfg-list"></div>
+
+      <div class="sec-title">Situação</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="cfg-novo-sit" placeholder="Nova situação" style="flex:1" onkeydown="if(event.key==='Enter')addSitCfg()">
+        <button class="btn" style="background:var(--blue);color:#fff" onclick="addSitCfg()">+ Incluir</button>
+      </div>
+      <div id="cfg-lista-sit" class="cfg-list"></div>
 
       <div class="sec-title">Categorias de Despesa <span class="muted" style="font-size:12px;font-weight:400">(ordem alfabética)</span></div>
       <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -518,7 +526,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '27/10/2026 · 22h';   // <-- muda a cada atualização
+const APP_VERSION = '31/10/2026 · 10h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -753,9 +761,10 @@ async function loadFinanceiro(){
   }catch(e){ HAS_DESPESAS=false; }
 }
 /* ---------- CONFIGURAÇÕES (tipos de serviço e status) ---------- */
-let CFG = { tipos:null, status:null, cat:null, empresas:null, catPessoal:null };   // null = usar a lista padrão + o que já existe
+let CFG = { tipos:null, status:null, sit:null, cat:null, empresas:null, catPessoal:null };   // null = usar a lista padrão + o que já existe
 let HAS_CONFIG = true;                     // vira false se a tabela "config" ainda nao existir
-const CFG_CHAVE = { tipos:'tipos', status:'status', cat:'categorias_despesa', empresas:'empresas', catPessoal:'categorias_pessoal' };
+const CFG_CHAVE = { tipos:'tipos', status:'status', sit:'situacoes', cat:'categorias_despesa', empresas:'empresas', catPessoal:'categorias_pessoal' };
+function _norm(s){ return (s||'').toString().trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' '); }
 const CAT_PESSOAL_PADRAO = ['Mercado','Aluguel','Água/Luz/Internet','Escola','Saúde','Lazer',
   'Transporte','Cartão de crédito','Pró-labore','Poupança','Reserva de emergência','Tesouro Direto',
   'CDB/Renda Fixa','Ações/Fundos','Outros'];
@@ -771,7 +780,7 @@ const FORMAS_PGTO = ['Pix','Dinheiro','Cartão de débito','Cartão de crédito'
 const MEI_LIMITE = 81000;
 function htmlEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function cfgLocalLer(){ try{ const c=JSON.parse(localStorage.getItem('cs_cfg')||'null');
-  if(c){ ['tipos','status','cat','empresas','catPessoal'].forEach(k=>{ if(Array.isArray(c[k])) CFG[k]=c[k]; }); } }catch(e){} }
+  if(c){ ['tipos','status','sit','cat','empresas','catPessoal'].forEach(k=>{ if(Array.isArray(c[k])) CFG[k]=c[k]; }); } }catch(e){} }
 function cfgLocalSalvar(){ try{ localStorage.setItem('cs_cfg', JSON.stringify(CFG)); }catch(e){} }
 async function loadConfig(){
   cfgLocalLer();
@@ -785,6 +794,7 @@ async function loadConfig(){
     if(Array.isArray(m.categorias_despesa)) CFG.cat=m.categorias_despesa;
     if(Array.isArray(m.empresas)) CFG.empresas=m.empresas;
     if(Array.isArray(m.categorias_pessoal)) CFG.catPessoal=m.categorias_pessoal;
+    if(Array.isArray(m.situacoes)) CFG.sit=m.situacoes;
     cfgLocalSalvar();
   }catch(e){ HAS_CONFIG=false; }
 }
@@ -805,7 +815,18 @@ function statusLista(){
   const base = (CFG.status&&CFG.status.length) ? CFG.status : uniq([...BASE_STATUS, ...DB.projetos.map(p=>p.status)]);
   return uniq(base).sort((a,b)=>a.localeCompare(b,'pt-BR'));
 }
-let _cfgTipos=[], _cfgStatus=[], _cfgCat=[];
+function situacaoLista(){
+  const base = (CFG.sit&&CFG.sit.length) ? CFG.sit : uniq([...BASE_SIT, ...DB.projetos.map(p=>p.situacao)]);
+  return uniq(base).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+async function dedupTipos(){
+  const atual=tiposOrdenados(); const seen=new Set(); const out=[];
+  atual.forEach(t=>{ const k=_norm(t); if(!seen.has(k)){ seen.add(k); out.push(t); } });
+  if(out.length===atual.length){ toast('Nenhum duplicado encontrado'); return; }
+  CFG.tipos=out.sort((a,b)=>a.localeCompare(b,'pt-BR')); await cfgSalvar('tipos'); renderCfgListas();
+  toast((atual.length-out.length)+' duplicado(s) removido(s) ✔');
+}
+let _cfgTipos=[], _cfgStatus=[], _cfgCat=[], _cfgSit=[];
 function openConfig(){
   renderCfgListas();
   document.getElementById('cfg-aviso').textContent = HAS_CONFIG ? ''
@@ -821,6 +842,9 @@ function renderCfgListas(){
     _cfgTipos.map((t,i)=>item(t,'delTipoCfg',i)).join('') || '<div class="muted" style="padding:6px">Nenhum.</div>';
   document.getElementById('cfg-lista-status').innerHTML =
     _cfgStatus.map((s,i)=>item(s,'delStatusCfg',i)).join('') || '<div class="muted" style="padding:6px">Nenhum.</div>';
+  _cfgSit=situacaoLista();
+  const els=document.getElementById('cfg-lista-sit');
+  if(els) els.innerHTML = _cfgSit.map((s,i)=>item(s,'delSitCfg',i)).join('') || '<div class="muted" style="padding:6px">Nenhuma.</div>';
   _cfgCat=catDespesaLista();
   const elc=document.getElementById('cfg-lista-cat');
   if(elc) elc.innerHTML = _cfgCat.map((c,i)=>item(c,'delCatCfg',i)).join('') || '<div class="muted" style="padding:6px">Nenhuma.</div>';
@@ -863,6 +887,19 @@ async function delStatusCfg(i){
   const emUso=DB.projetos.some(p=>p.status===s);
   if(!confirm('Excluir o status "'+s+'" da lista?'+(emUso?'\n\n(Projetos que já usam esse status continuam como estão.)':''))) return;
   CFG.status=statusLista().filter(x=>x!==s); await cfgSalvar('status'); renderCfgListas();
+}
+async function addSitCfg(){
+  const inp=document.getElementById('cfg-novo-sit'); const s=(inp.value||'').trim(); if(!s) return;
+  const atual=situacaoLista();
+  if(atual.some(x=>x.toLowerCase()===s.toLowerCase())){ inp.value=''; renderCfgListas(); return; }
+  CFG.sit=uniq([...atual,s]).sort((a,b)=>a.localeCompare(b,'pt-BR')); await cfgSalvar('sit');
+  inp.value=''; renderCfgListas();
+}
+async function delSitCfg(i){
+  const s=_cfgSit[i]; if(s==null) return;
+  const emUso=DB.projetos.some(p=>p.situacao===s);
+  if(!confirm('Excluir a situação "'+s+'" da lista?'+(emUso?'\n\n(Projetos que já usam essa situação continuam como estão.)':''))) return;
+  CFG.sit=situacaoLista().filter(x=>x!==s); await cfgSalvar('sit'); renderCfgListas();
 }
 /* ---------- FINANCEIRO (Entradas, Saídas, limite MEI) ---------- */
 function moneyC(v){ if(v==null||v==='') return 'R$ 0,00'; return Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
@@ -1347,7 +1384,7 @@ function renderKpis(){
 function fillFilters(){
   const set=(id,arr,ph)=>{const el=document.getElementById(id);const cur=el.value;
     el.innerHTML=`<option value="">${ph}</option>`+arr.map(v=>`<option>${v}</option>`).join('');el.value=cur;};
-  set('fsit',optsList('situacao',BASE_SIT),'Todas situações');
+  set('fsit',situacaoLista(),'Todas situações');
   set('femp',uniq([...EMPRESAS, ...DB.projetos.map(p=>p.empresa)]),'Todas empresas');
   set('fconc',uniq([...CONCESSIONARIAS, ...DB.projetos.map(p=>p.concessionaria)]),'Todas concessionárias');
   document.getElementById('empresas-modal').innerHTML =
@@ -1459,8 +1496,8 @@ function novoProjetoCliente(nome){
   document.getElementById('f-cpf').value=(proj.find(p=>p.cpf)||{}).cpf||'';
   document.getElementById('f-dataEntrada').value=hoje();
   fillTipoSelect(ref.tipo||'');
-  fillSelect('f-status',statusLista(), 'Aguardando');
-  fillSelect('f-situacao',optsList('situacao',BASE_SIT), 'Aguardando');
+  fillStatusSelect('Aguardando');
+  fillSituacaoSelect('Aguardando');
 }
 function renderPainel(){
   const count=(field)=>{const m={};DB.projetos.forEach(p=>{const k=p[field]||'—';m[k]=(m[k]||0)+1;});
@@ -1627,6 +1664,26 @@ function tipoNovo(){
   cfgSalvar('tipos');
   fillTipoSelect(nome);   // reconstrói em ordem alfabética com o novo já selecionado
 }
+function fillStatusSelect(val){ fillSelect('f-status', statusLista(), val);
+  document.getElementById('f-status').insertAdjacentHTML('beforeend','<option value="__novo__">➕ Criar novo status…</option>'); }
+function statusSelChange(){
+  const sel=document.getElementById('f-status');
+  if(sel.value==='__novo__'){ const nome=(prompt('Nome do novo status:')||'').trim();
+    if(!nome){ sel.value=''; return; }
+    const atual=statusLista(); const ja=atual.find(x=>x.toLowerCase()===nome.toLowerCase());
+    if(ja){ fillStatusSelect(ja); } else { CFG.status=uniq([...atual,nome]).sort((a,b)=>a.localeCompare(b,'pt-BR')); cfgSalvar('status'); fillStatusSelect(nome); }
+  }
+  onStatusChange();
+}
+function fillSituacaoSelect(val){ fillSelect('f-situacao', situacaoLista(), val);
+  document.getElementById('f-situacao').insertAdjacentHTML('beforeend','<option value="__novo__">➕ Criar nova situação…</option>'); }
+function situacaoNovo(){
+  const sel=document.getElementById('f-situacao'); if(sel.value!=='__novo__') return;
+  const nome=(prompt('Nome da nova situação:')||'').trim(); if(!nome){ sel.value=''; return; }
+  const atual=situacaoLista(); const ja=atual.find(x=>x.toLowerCase()===nome.toLowerCase());
+  if(ja){ fillSituacaoSelect(ja); return; }
+  CFG.sit=uniq([...atual,nome]).sort((a,b)=>a.localeCompare(b,'pt-BR')); cfgSalvar('sit'); fillSituacaoSelect(nome);
+}
 function openEdit(id){
   const p = id ? DB.projetos.find(x=>x.id===id) : null;
   document.getElementById('mtitle').textContent = p?'Editar projeto':'Novo projeto';
@@ -1645,8 +1702,8 @@ function openEdit(id){
   fillSelect('f-mes', MESES, mesMonth(g('mes')));
   fillTipoSelect(g('tipo'));
   fillSelect('f-concessionaria', CONCESSIONARIAS, g('concessionaria'));
-  fillSelect('f-status',statusLista(), g('status'));
-  fillSelect('f-situacao',optsList('situacao',BASE_SIT), g('situacao'));
+  fillStatusSelect(g('status'));
+  fillSituacaoSelect(g('situacao'));
   const pa=document.getElementById('f-parecerAcesso');
   pa.disabled=!HAS_PARECER;
   pa.placeholder=HAS_PARECER?'':'(será liberado após atualização do banco)';
@@ -1672,9 +1729,9 @@ async function saveProject(){
     instalacao:val('instalacao'), cpf:val('cpf'), mes:val('mes'),
     tipo:(document.getElementById('f-tipo').value==='__novo__'?'':document.getElementById('f-tipo').value), valor:numv('valor'), potencia:numv('potencia'),
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
-    faturado:val('faturado'), status:document.getElementById('f-status').value,
+    faturado:val('faturado'), status:(v=>v==='__novo__'?'':v)(document.getElementById('f-status').value),
     dataProjAprovado:val('dataProjAprovado'), rc:document.getElementById('f-rc').checked,
-    situacao:document.getElementById('f-situacao').value, empresa:val('empresa'),
+    situacao:(v=>v==='__novo__'?'':v)(document.getElementById('f-situacao').value), empresa:val('empresa'),
     concessionaria:document.getElementById('f-concessionaria').value,
     protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), obs:val('obs') };
   if(!obj.cliente){ toast('Informe o cliente'); return; }
