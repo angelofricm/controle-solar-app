@@ -382,7 +382,7 @@
       <input type="hidden" id="f-id">
       <div class="grid2">
         <div class="field full"><label>Cliente</label><input id="f-cliente"></div>
-        <div class="field"><label>Tipo de serviço</label><select id="f-tipo" onchange="tipoNovo()"></select></div>
+        <div class="field"><label>Tipo de serviço</label><select id="f-tipo" onchange="tipoSelChange()"></select></div>
         <div class="field"><label>Instalação</label><input id="f-instalacao"></div>
         <div class="field"><label>CPF</label><input id="f-cpf"></div>
         <div class="field"><label>Mês</label><select id="f-mes"></select></div>
@@ -396,6 +396,7 @@
         <div class="field"><label>Total módulos</label><input id="f-modulos" type="number" step="1"></div>
         <div class="field"><label>Data entrada</label><input id="f-dataEntrada" type="date"></div>
         <div class="field"><label>Data de Envio</label><input id="f-dataEnvio" type="date"></div>
+        <div class="field"><label>Data do prazo</label><input id="f-dataPrazo" type="date"></div>
         <div class="field"><label>Data vistoria</label><input id="f-dataVistoria" type="date"></div>
         <div class="field"><label>Data Projeto Aprovado</label><input id="f-dataProjAprovado" type="date" onchange="atualizaVenc()"></div>
         <div class="field"><label>Vencimento (120 dias)</label><input id="f-vencimento" readonly style="background:#f1f5f9" placeholder="—"></div>
@@ -426,8 +427,12 @@
     <div class="mhead"><h2>⚙ Configurações</h2>
       <button class="x" onclick="closeConfig()">×</button></div>
     <div class="mbody">
-      <div class="sec-title" style="margin-top:0">🔑 Senha</div>
-      <button class="btn btn-line" onclick="alterarSenha()">Alterar minha senha</button>
+      <div class="sec-title" style="margin-top:0">👤 Meu usuário</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-line" onclick="editarEmail()">✉ Trocar e-mail</button>
+        <button class="btn btn-line" onclick="alterarSenha()">🔑 Alterar senha</button>
+      </div>
+      <div class="muted" id="cfg-email" style="font-size:12px;margin-top:6px"></div>
 
       <div class="sec-title">💾 Backup</div>
       <button class="btn btn-line" onclick="backupJSON()">⬇ Backup completo do programa (JSON)</button>
@@ -526,7 +531,7 @@ const BASE_STATUS = ['Aguardando','Projeto Enviado','Projeto Aprovado','Proj. Ap
 const BASE_SIT = ['Aguardando','Encerrado','Cancelado'];
 const EMPRESAS = ['FR Soluções Elétricas','Pontual Elétrica','Nordeste Solar'];
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-const APP_VERSION = '31/10/2026 · 10h';   // <-- muda a cada atualização
+const APP_VERSION = '31/10/2026 · 12h';   // <-- muda a cada atualização
 { const v=document.getElementById('lg-versao'); if(v) v.textContent='versão '+APP_VERSION; }
 const CONCESSIONARIAS = ['EDP','LFSM','COELBA','CEMIG'];
 const TABELA_KWP = [[1,5,400],[5,10,500],[10,20,700],[20,30,900],[30,50,1000],[50,75,1200]];
@@ -549,7 +554,7 @@ const FIELDS = [['id','id'],['categoria','categoria'],['mes','mes'],['idProjeto'
   ['cliente','cliente'],['instalacao','instalacao'],['cpf','cpf'],['tipo','tipo'],['valor','valor'],
   ['potencia','potencia'],['modulos','modulos'],['dataEntrada','data_entrada'],['dataEnvio','data_envio'],['protocolo','protocolo'],
   ['dataVistoria','data_vistoria'],['parecerAcesso','parecer_acesso'],['ntVistoria','nt_vistoria'],['status','status'],['situacao','situacao'],
-  ['dataProjAprovado','data_projeto_aprovado'],['rc','rc'],
+  ['dataProjAprovado','data_projeto_aprovado'],['rc','rc'],['dataPrazo','data_prazo'],
   ['faturado','faturado'],['empresa','empresa'],['concessionaria','concessionaria'],['obs','obs']];
 function toCamel(r){ const o={}; FIELDS.forEach(([c,s])=>o[c]=r[s]); return o; }
 function toSnake(o){ const r={}; FIELDS.forEach(([c,s])=>{ if(o[c]===undefined) return;
@@ -561,6 +566,9 @@ let view = 'projetos';
 let HAS_PARECER = true;  // vira false se a coluna parecer_acesso ainda nao existir no banco
 let HAS_APROV = true;    // vira false se a coluna data_projeto_aprovado ainda nao existir no banco
 let HAS_RC = true;       // vira false se a coluna rc ainda nao existir no banco
+let HAS_PRAZO = true;    // vira false se a coluna data_prazo ainda nao existir no banco
+const SOLAR_TIPOS = ['MMGD','Ampliação','MMGD Ampliação','MMGD Grid Zero','MMGD GRID ZERO'];
+function ehSolar(t){ return SOLAR_TIPOS.some(x=>x.toLowerCase()===String(t||'').toLowerCase()); }
 const PRAZO_VENC_DIAS = 120;   // vencimento do projeto = Data do Projeto Aprovado + 120 dias
 function vencimentoDe(dataAprov){ if(!dataAprov) return ''; const s=String(dataAprov).slice(0,10);
   const d=new Date(s+'T00:00:00'); if(isNaN(d)) return ''; d.setDate(d.getDate()+PRAZO_VENC_DIAS);
@@ -739,7 +747,7 @@ async function loadData(){
     else { setOffline(true,null); toast('Sem internet e sem dados salvos neste aparelho.'); }
     return;
   }
-  if(proj && proj.length){ HAS_PARECER = ('parecer_acesso' in proj[0]); HAS_APROV = ('data_projeto_aprovado' in proj[0]); HAS_RC = ('rc' in proj[0]); }
+  if(proj && proj.length){ HAS_PARECER = ('parecer_acesso' in proj[0]); HAS_APROV = ('data_projeto_aprovado' in proj[0]); HAS_RC = ('rc' in proj[0]); HAS_PRAZO = ('data_prazo' in proj[0]); }
   DB.projetos = (proj||[]).map(toCamel);
   DB.receber = (rec||[]).map(r=>({id:r.id,cliente:r.cliente,tipo:r.tipo,empresa:r.empresa,valor:r.valor,
     pago:r.pago,projetoId:r.projeto_id,dataPagamento:r.data_pagamento}));
@@ -827,8 +835,18 @@ async function dedupTipos(){
   toast((atual.length-out.length)+' duplicado(s) removido(s) ✔');
 }
 let _cfgTipos=[], _cfgStatus=[], _cfgCat=[], _cfgSit=[];
-function openConfig(){
+async function editarEmail(){
+  let atual=''; try{ const {data}=await sb.auth.getUser(); atual=data&&data.user?data.user.email:''; }catch(e){}
+  const novo=(prompt('Novo e-mail de acesso:\n(atual: '+(atual||'—')+')', atual)||'').trim();
+  if(!novo || novo===atual) return;
+  const {error}=await sb.auth.updateUser({email:novo});
+  if(error){ alert('Não foi possível trocar: '+error.message); return; }
+  alert('Enviamos um link de confirmação para '+novo+'.\n\nAbra esse e-mail e confirme para concluir a troca. Até confirmar, continue entrando com o e-mail atual.');
+}
+async function openConfig(){
   renderCfgListas();
+  try{ const {data}=await sb.auth.getUser(); const el=document.getElementById('cfg-email');
+    if(el) el.textContent = data&&data.user?('E-mail atual: '+data.user.email):''; }catch(e){}
   document.getElementById('cfg-aviso').textContent = HAS_CONFIG ? ''
     : '⚠ A tabela "config" ainda não existe no banco — por enquanto estas listas ficam salvas só neste aparelho. Rode o SQL do config (add-config.sql) para sincronizar entre o celular e o PC.';
   document.getElementById('cfgOverlay').classList.add('open');
@@ -1692,8 +1710,9 @@ function openEdit(id){
   const g=(k)=>p?(p[k]??''):'';
   document.getElementById('f-id').value = p?p.id:'';
   ['cliente','instalacao','cpf','valor','potencia','modulos',
-   'dataEntrada','dataEnvio','dataVistoria','dataProjAprovado','faturado','empresa','protocolo','parecerAcesso','obs']
+   'dataEntrada','dataEnvio','dataVistoria','dataProjAprovado','dataPrazo','faturado','empresa','protocolo','parecerAcesso','obs']
     .forEach(k=>document.getElementById('f-'+k).value = g(k)==null?'':(''+g(k)).slice(0, k.startsWith('data')||k==='faturado'?10:9999));
+  const dp=document.getElementById('f-dataPrazo'); dp.disabled=!HAS_PRAZO; dp.title=HAS_PRAZO?'':'(será liberado após atualização do banco)';
   atualizaVenc();
   const ap=document.getElementById('f-dataProjAprovado');
   ap.disabled=!HAS_APROV; ap.title=HAS_APROV?'':'(será liberado após atualização do banco)';
@@ -1707,8 +1726,20 @@ function openEdit(id){
   const pa=document.getElementById('f-parecerAcesso');
   pa.disabled=!HAS_PARECER;
   pa.placeholder=HAS_PARECER?'':'(será liberado após atualização do banco)';
+  aplicarCamposPorTipo();
   document.getElementById('overlay').classList.add('open');
 }
+/* mostra/esconde campos conforme o tipo: serviços NÃO-solares usam ficha reduzida */
+function aplicarCamposPorTipo(){
+  const solar = ehSolar(document.getElementById('f-tipo').value);
+  // campos que só aparecem em serviços solares
+  ['potencia','modulos','dataEntrada','dataVistoria','dataProjAprovado','vencimento','parecerAcesso','obs']
+    .forEach(k=>{ const el=document.getElementById('f-'+k); if(!el) return;
+      const campo=el.closest('.field'); if(campo) campo.style.display = solar?'':'none'; });
+  // "Data do prazo" aparece nos NÃO-solares
+  const dpz=document.getElementById('f-dataPrazo').closest('.field'); if(dpz) dpz.style.display = solar?'none':'';
+}
+function tipoSelChange(){ tipoNovo(); aplicarCamposPorTipo(); }
 function closeEdit(){ document.getElementById('overlay').classList.remove('open'); }
 function atualizaVenc(){ const v=vencimentoDe(document.getElementById('f-dataProjAprovado').value);
   document.getElementById('f-vencimento').value = v?d2br(v):''; }
@@ -1730,7 +1761,7 @@ async function saveProject(){
     tipo:(document.getElementById('f-tipo').value==='__novo__'?'':document.getElementById('f-tipo').value), valor:numv('valor'), potencia:numv('potencia'),
     modulos:numv('modulos'), dataEntrada:val('dataEntrada'), dataEnvio:val('dataEnvio'), dataVistoria:val('dataVistoria'),
     faturado:val('faturado'), status:(v=>v==='__novo__'?'':v)(document.getElementById('f-status').value),
-    dataProjAprovado:val('dataProjAprovado'), rc:document.getElementById('f-rc').checked,
+    dataProjAprovado:val('dataProjAprovado'), rc:document.getElementById('f-rc').checked, dataPrazo:val('dataPrazo'),
     situacao:(v=>v==='__novo__'?'':v)(document.getElementById('f-situacao').value), empresa:val('empresa'),
     concessionaria:document.getElementById('f-concessionaria').value,
     protocolo:val('protocolo'), parecerAcesso:val('parecerAcesso'), obs:val('obs') };
@@ -1739,6 +1770,7 @@ async function saveProject(){
   if(!HAS_PARECER) delete row.parecer_acesso;
   if(!HAS_APROV) delete row.data_projeto_aprovado;
   if(!HAS_RC) delete row.rc;
+  if(!HAS_PRAZO) delete row.data_prazo;
   const isNew=!idv; let novoId=null, error;
   if(idv){ row.id=+idv; ({error}=await sb.from('projetos').update(row).eq('id',+idv)); }
   else { novoId=nextId(); row.id=novoId; ({error}=await sb.from('projetos').insert(row)); }
