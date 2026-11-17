@@ -589,6 +589,11 @@ function vencimentoDe(dataAprov){ if(!dataAprov) return ''; const s=String(dataA
   const p2=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate()); }
 function diasParaVenc(dataAprov){ const v=vencimentoDe(dataAprov); if(!v) return null;
   const hj=new Date(); hj.setHours(0,0,0,0); return Math.round((new Date(v+'T00:00:00')-hj)/86400000); }
+// vencimento efetivo do projeto: solares (MMGD, MMGD Ampliação, MMGD Grid Zero) = aprovado + 120 dias;
+// demais tipos de serviço = a "Data do prazo" digitada na ficha
+function vencProj(p){ if(!p) return '';
+  if(!ehSolar(p.tipo)) return p.dataPrazo ? String(p.dataPrazo).slice(0,10) : '';
+  return vencimentoDe(p.dataProjAprovado); }
 let cliFilter = '';
 let loginStep = 'pass';   // pass | mfa | enroll
 let mfaFactorId = null;
@@ -605,14 +610,14 @@ function optsList(field, base){
 }
 function sitClass(s){ if(s==='Encerrado') return 'green'; if(s==='Aguardando') return 'amber';
   if(s==='Cancelado') return 'gray'; return 'blue'; }
-function vencCell(p){ const v=vencimentoDe(p.dataProjAprovado); if(!v) return '—';
-  const dd=diasParaVenc(p.dataProjAprovado);
+function vencCell(p){ const v=vencProj(p); if(!v) return '—';
+  const hj0=new Date(); hj0.setHours(0,0,0,0); const dd=Math.round((new Date(v+'T00:00:00')-hj0)/86400000);
   let st='background:#e0f2fe;color:#075985'; // normal
   if(p.faturado) st='background:#dcfce7;color:#166534';       // já faturado: ok (verde)
   else if(dd<0) st='background:#fee2e2;color:#991b1b';        // vencido: vermelho
   else if(dd<=15) st='background:#fef9c3;color:#854d0e';      // vencendo: amarelo
   const ad=p.faturado?'':(dd<0?` (${-dd}d atrasado)`:dd<=15?` (${dd}d)`:'');
-  return `<span class="chip" style="${st}" title="Projeto aprovado em ${d2br(p.dataProjAprovado)} + ${PRAZO_VENC_DIAS} dias">${d2br(v)}${ad}</span>`; }
+  return `<span class="chip" style="${st}" title="${ehSolar(p.tipo)?`Projeto aprovado em ${d2br(p.dataProjAprovado)} + ${PRAZO_VENC_DIAS} dias`:'Data do prazo'}">${d2br(v)}${ad}</span>`; }
 function nextId(){ return DB.projetos.reduce((m,p)=>Math.max(m,p.id||0),0)+1; }
 
 /* ---------- AUTH ---------- */
@@ -912,7 +917,7 @@ async function salvarFiltroFav(){
 function aplicarFiltroFav(nome){
   if(!nome) return;
   const f=(CFG.filtros||[]).find(x=>x.nome===nome); if(!f){ return; }
-  statusSel=new Set(f.status||[]); buildStatusFilter();
+  statusSelPadrao=false; statusSel=new Set(f.status||[]); buildStatusFilter();
   document.getElementById('fsit').value=f.sit||'';
   document.getElementById('femp').value=f.emp||'';
   document.getElementById('fconc').value=f.conc||'';
@@ -1465,18 +1470,27 @@ function fillFilters(){
 }
 
 /* filtro de Status com seleção múltipla (padrão: só "Projeto Enviado") */
-const STATUS_PADRAO = ['Aguardando','Enviar Novo Projeto','Projeto Enviado','Projeto Aprovado','Vistoria/Concluído'];
+const STATUS_PADRAO = ['Aguardando','Aguardando Concessionária','Enviar Novo Projeto','Projeto Enviado','Projeto Aprovado','Vistoria/Concluído'];
+// compara status ignorando maiúsculas/acentos (ex.: "Aguardando concessionaria" = "Aguardando Concessionária")
+const stNorm = x => String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+const STATUS_PADRAO_N = new Set(STATUS_PADRAO.map(stNorm));
+// conjunto padrão: os status acima, com a grafia que existir na lista/nos projetos
+function statusPadraoSet(opts){ const out=new Set(STATUS_PADRAO);
+  (opts||[]).forEach(o=>{ if(STATUS_PADRAO_N.has(stNorm(o))) out.add(o); }); return out; }
 let statusSel = new Set(STATUS_PADRAO);
+let statusSelPadrao = true;   // enquanto o usuário não mexer no filtro, usa o padrão
 function buildStatusFilter(){
   const opts=optsList('status',statusLista());
+  if(statusSelPadrao) statusSel = statusPadraoSet(opts);
   document.getElementById('fstatusOpts').innerHTML = opts.map(s=>
     `<label><input type="checkbox" value="${s.replace(/"/g,'&quot;')}" ${statusSel.has(s)?'checked':''}
       onchange="onStatusToggle(this)"> ${s}</label>`).join('');
   updateStatusLabel();
 }
-function onStatusToggle(cb){ cb.checked?statusSel.add(cb.value):statusSel.delete(cb.value);
+function onStatusToggle(cb){ statusSelPadrao=false; cb.checked?statusSel.add(cb.value):statusSel.delete(cb.value);
   updateStatusLabel(); render(); }
-function setStatusAll(padrao){ statusSel = padrao ? new Set(STATUS_PADRAO) : new Set();
+function setStatusAll(padrao){ statusSelPadrao = !!padrao;
+  statusSel = padrao ? statusPadraoSet(optsList('status',statusLista())) : new Set();
   buildStatusFilter(); render(); }
 function updateStatusLabel(){ const l=document.getElementById('fstatusLabel');
   l.textContent = statusSel.size===0 ? 'Todos' : (statusSel.size===1 ? [...statusSel][0] : statusSel.size+' selecionados'); }
@@ -1540,7 +1554,7 @@ function renderClientes(){
     if(p.status==='Aguardando') map[c].aguard++;
     if(p.status==='Projeto Enviado') map[c].enviado++;
     // guarda o vencimento mais próximo (de projetos ainda não faturados)
-    if(p.dataProjAprovado && !p.faturado){ const vc=vencimentoDe(p.dataProjAprovado);
+    if(!p.faturado){ const vc=vencProj(p);
       if(vc && (!map[c].venc || vc<map[c].venc)) map[c].venc=vc; } });
   let names=Object.keys(map).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   if(q) names=names.filter(n=>n.toLowerCase().includes(q));
@@ -1938,7 +1952,7 @@ function buildXlsx(quando){
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
     'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','RC','Faturado','Empresa','Concessionária','Observação'];
   const proj=DB.projetos.slice().sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
-  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):(c==='rc'?(p.rc?'Sim':''):(p[c]==null?'':p[c]))))))];
+  const aoa=[['Backup gerado em:', quando||carimboLegivel()], head, ...proj.map(p=>cols.map(c=> c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencProj(p)||''):(c==='rc'?(p.rc?'Sim':''):(p[c]==null?'':p[c]))))))];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Projetos');
   return XLSX.write(wb,{type:'array',bookType:'xlsx'});
@@ -1983,7 +1997,7 @@ function exportCSV(){
   const head=['Categoria','Mês','ID','Cliente','Instalação','CPF','Tipo','Valor','Potência(kWp)',
     'Módulos','Data Entrada','Data de Envio','Protocolo','Parecer de Acesso','Data Vistoria','NT Vistoria','Status','Situação','Projeto Aprovado','Vencimento','RC','Faturado','Empresa','Concessionária','Observação'];
   const esc=(v)=>{v=(v==null?'':String(v)); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencimentoDe(p.dataProjAprovado)||''):(c==='rc'?(p.rc?'Sim':''):p[c]))))).join(';')));
+  const lines=[head.join(';')].concat(DB.projetos.map(p=>cols.map(c=>esc(c==='categoria'?'Solicitação':(c==='mes'?mesRel(p):(c==='vencimento'?(vencProj(p)||''):(c==='rc'?(p.rc?'Sim':''):p[c]))))).join(';')));
   const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   dl(blob,`projetos-solar-${new Date().toISOString().slice(0,10)}.csv`); toast('Arquivo Excel (CSV) baixado');
 }
