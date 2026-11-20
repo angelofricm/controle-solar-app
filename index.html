@@ -96,6 +96,9 @@
   .field.full{grid-column:1/-1}
   .x{margin-left:auto;background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1}
   .bar-row{display:grid;grid-template-columns:150px 1fr 34px;align-items:center;gap:10px;margin:7px 0;font-size:12.5px}
+  .bar-row.clk{cursor:pointer;border-radius:6px;padding:2px 4px;margin:5px -4px}
+  .bar-row.clk:hover{background:var(--blue-l)}
+  .bar-row.clk .right b{color:var(--blue);text-decoration:underline}
   .bar-track{background:#eef2f6;border-radius:6px;height:16px;overflow:hidden}
   .bar-fill{height:100%;background:var(--blue);border-radius:6px}
   .sec-title{font-weight:700;color:var(--blue-d);margin:18px 0 8px}
@@ -418,7 +421,7 @@
         <div class="field"><label>Parecer de Acesso</label><input id="f-parecerAcesso"></div>
       </div>
       <div class="field full" style="margin-top:12px"><label>Observação</label>
-        <textarea id="f-obs" rows="2"></textarea></div>
+        <textarea id="f-obs" rows="3" placeholder="Anotações deste pedido (vale para todos os tipos de serviço)"></textarea></div>
     </div>
     <div class="mfoot">
       <button class="btn btn-danger" id="delBtn" onclick="delProject()">Excluir</button>
@@ -595,6 +598,8 @@ function vencProj(p){ if(!p) return '';
   if(!ehSolar(p.tipo)) return p.dataPrazo ? String(p.dataPrazo).slice(0,10) : '';
   return vencimentoDe(p.dataProjAprovado); }
 let cliFilter = '';
+let painelFiltro = null;   // {campo:'status'|'situacao', valor, rotulo} — vindo do clique no Painel
+let _painelBars = {};
 let loginStep = 'pass';   // pass | mfa | enroll
 let mfaFactorId = null;
 
@@ -1509,12 +1514,17 @@ function render(){
       &nbsp;<button class="btn" style="background:var(--blue);color:#fff;padding:4px 10px;font-size:12px"
         onclick="novoProjetoCliente('${cliFilter.replace(/'/g,"\\'")}')">+ Novo projeto p/ este cliente</button>
       &nbsp;<a href="#" onclick="cliFilter='';render();return false" style="color:var(--blue-d)">✕ limpar</a>`;}
+  else if(painelFiltro){ note.style.display='flex';
+    note.innerHTML=`Projetos com ${painelFiltro.campo==='status'?'status':'situação'} <b>&nbsp;${painelFiltro.valor}</b>
+      &nbsp;<a href="#" onclick="painelFiltro=null;render();return false" style="color:var(--blue-d)">✕ limpar</a>`;}
   else note.style.display='none';
   const norm=s=>(s||'').toString().trim().toLowerCase();
   let rows=DB.projetos.filter(p=>{
     // Com um cliente aberto ("Serviços de X"): mostra TODOS os projetos dele,
     // ignorando os demais filtros (senão um projeto do cliente poderia ficar oculto).
     if(cliFilter) return norm(p.cliente)===norm(cliFilter);
+    // Vindo do Painel (clique no total): mostra TODOS os projetos daquele status/situação
+    if(painelFiltro) return (p[painelFiltro.campo]||'—')===painelFiltro.valor;
     if(statusSel.size>0 && !statusSel.has(p.status)) return false;
     if(fsi){ if(p.situacao!==fsi) return false; }
     else if(p.situacao==='Encerrado') return false; // "Todas situações" nao mostra Encerrado
@@ -1522,7 +1532,7 @@ function render(){
     if(fco && p.concessionaria!==fco) return false;
     if(ffat==='faturados' && !p.faturado) return false;
     if(ffat==='falta' && p.faturado) return false;
-    if(q){ const blob=`${p.cliente} ${p.instalacao} ${p.protocolo} ${p.cpf} ${p.tipo}`.toLowerCase();
+    if(q){ const blob=`${p.cliente} ${p.instalacao} ${p.protocolo} ${p.cpf} ${p.tipo} ${p.obs||''}`.toLowerCase();
       if(!blob.includes(q)) return false; }
     return true;
   });
@@ -1532,7 +1542,7 @@ function render(){
     + (rows.length<DB.projetos.length ? ' — o restante está apenas oculto pelos filtros (não foi apagado).' : '');
   if(!rows.length){ tb.innerHTML=`<tr><td colspan="12" class="empty">Nenhum projeto encontrado.</td></tr>`; return; }
   tb.innerHTML=rows.map(p=>`<tr onclick="openEdit(${p.id})">
-    <td><b>${p.cliente||'—'}</b>${p.idProjeto?` <span class="muted">#${p.idProjeto}</span>`:''}</td>
+    <td><b>${p.cliente||'—'}</b>${p.idProjeto?` <span class="muted">#${p.idProjeto}</span>`:''}${p.obs?` <span title="${String(p.obs).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" style="cursor:help">📝</span>`:''}</td>
     <td>${p.tipo||'—'}</td>
     <td>${empChip(p.empresa)}</td>
     <td>${p.concessionaria||'—'}</td>
@@ -1571,7 +1581,9 @@ function renderClientes(){
     ${chips.length?`<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">${chips.join('')}</div>`:''}
   </div>`;}).join('') || `<div class="empty">Nenhum cliente.</div>`;
 }
-function abrirCliente(nome){ cliFilter=nome; const q=document.getElementById('q'); if(q) q.value=''; setView('projetos'); }
+function abrirPainelFiltro(campo,i){ const valor=(_painelBars[campo]||[])[i]; if(valor==null) return;
+  painelFiltro={campo, valor}; cliFilter=''; const q=document.getElementById('q'); if(q) q.value=''; setView('projetos'); }
+function abrirCliente(nome){ painelFiltro=null; cliFilter=nome; const q=document.getElementById('q'); if(q) q.value=''; setView('projetos'); }
 /* item 5: novo projeto já com os dados do cliente */
 function novoProjetoCliente(nome){
   const proj=DB.projetos.filter(p=>p.cliente===nome)
@@ -1588,12 +1600,12 @@ function novoProjetoCliente(nome){
 function renderPainel(){
   const count=(field)=>{const m={};DB.projetos.forEach(p=>{const k=p[field]||'—';m[k]=(m[k]||0)+1;});
     return Object.entries(m).sort((a,b)=>b[1]-a[1]);};
-  const bar=(entries)=>{const max=Math.max(1,...entries.map(e=>e[1]));
-    return entries.map(([k,v])=>`<div class="bar-row"><div title="${k}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${k}</div>
+  const bar=(entries,campo)=>{const max=Math.max(1,...entries.map(e=>e[1])); _painelBars[campo]=entries.map(e=>e[0]);
+    return entries.map(([k,v],i)=>`<div class="bar-row clk" onclick="abrirPainelFiltro('${campo}',${i})" title="Clique para ver os ${v} projeto(s): ${k}"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${k}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${v/max*100}%"></div></div>
       <div class="right"><b>${v}</b></div></div>`).join('');};
-  document.getElementById('barStatus').innerHTML=bar(count('status'));
-  document.getElementById('barSit').innerHTML=bar(count('situacao'));
+  document.getElementById('barStatus').innerHTML=bar(count('status'),'status');
+  document.getElementById('barSit').innerHTML=bar(count('situacao'),'situacao');
   const verPagas=document.getElementById('chkPagas')&&document.getElementById('chkPagas').checked;
   let rec=(DB.receber||[]).slice();
   if(!verPagas) rec=rec.filter(r=>!r.pago);
@@ -1654,7 +1666,7 @@ async function corrigirCobranca(recId, projId){
   renderKpis(); renderPainel(); toast('Cobrança corrigida ✔');
 }
 function setView(v){
-  view=v;
+  view=v; if(v!=='projetos') painelFiltro=null;   // filtro do Painel vale só até sair de Projetos
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));
   ['projetos','clientes','painel','dashboard','financeiro','pessoal'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hide',x!==v));
   if(v==='projetos') render();
@@ -1802,7 +1814,7 @@ function openEdit(id){
 function aplicarCamposPorTipo(){
   const solar = ehSolar(document.getElementById('f-tipo').value);
   // campos que só aparecem em serviços solares
-  ['potencia','modulos','dataEntrada','dataVistoria','dataProjAprovado','vencimento','parecerAcesso','obs']
+  ['potencia','modulos','dataEntrada','dataVistoria','dataProjAprovado','vencimento','parecerAcesso']
     .forEach(k=>{ const el=document.getElementById('f-'+k); if(!el) return;
       const campo=el.closest('.field'); if(campo) campo.style.display = solar?'':'none'; });
   // "Data do prazo" aparece nos NÃO-solares
