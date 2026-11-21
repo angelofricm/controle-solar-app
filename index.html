@@ -1619,12 +1619,18 @@ function abrirPainelFiltro(campo,i){ const valor=(_painelBars[campo]||[])[i]; if
 function abrirCliente(nome){ painelFiltro=null; cliFilter=nome; const q=document.getElementById('q'); if(q) q.value=''; setView('projetos'); }
 /* item 5: novo projeto já com os dados do cliente */
 function novoProjetoCliente(nome){
-  const proj=DB.projetos.filter(p=>p.cliente===nome)
-    .sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||''));
+  // puxa os dados do cliente dos projetos que ele já tem (o mais recente primeiro)
+  const nk=s=>String(s||'').trim().toLowerCase();
+  const proj=DB.projetos.filter(p=>nk(p.cliente)===nk(nome))
+    .sort((a,b)=>(b.dataEntrada||'').localeCompare(a.dataEntrada||'') || (b.id||0)-(a.id||0));
   const ref=proj[0]||{};
+  const pega=k=>{ const x=proj.find(p=>String(p[k]||'').trim()); return x?String(x[k]).trim():''; };
+  // nome completo: a grafia mais longa já usada para este cliente
+  const nomeCompleto=proj.map(p=>String(p.cliente||'').trim()).reduce((m,n)=>n.length>m.length?n:m, String(nome||'').trim());
   openEdit();
-  document.getElementById('f-cliente').value=nome;
-  document.getElementById('f-cpf').value=(proj.find(p=>p.cpf)||{}).cpf||'';
+  document.getElementById('f-cliente').value=nomeCompleto;
+  document.getElementById('f-instalacao').value=pega('instalacao');
+  document.getElementById('f-cpf').value=pega('cpf');
   document.getElementById('f-dataEntrada').value=hoje();
   fillTipoSelect(ref.tipo||'');
   fillStatusSelect('Aguardando');
