@@ -706,6 +706,37 @@ async function verifyChallenge(){
     await onLoggedIn();
   } finally { btn.disabled=false; if(loginStep==='mfa') btn.textContent='Confirmar'; }
 }
+/* Trocar e-mail/senha com 2FA ativo exige sessão confirmada pelo código (AAL2).
+   Se a sessão atual não estiver, pede o código de 6 dígitos do app autenticador. */
+async function garantirAAL2(){
+  let aal=null;
+  try{ ({data:aal}=await sb.auth.mfa.getAuthenticatorAssuranceLevel()); }catch(e){ return true; }
+  if(!aal || aal.currentLevel==='aal2' || aal.nextLevel!=='aal2') return true;
+  let fid=null;
+  try{ const {data:f}=await sb.auth.mfa.listFactors(); const t=f&&f.totp&&f.totp.find(x=>x.status==='verified')||(f&&f.totp&&f.totp[0]); fid=t&&t.id; }catch(e){}
+  if(!fid){ alert('Não encontrei o autenticador (2FA) desta conta. Saia e entre de novo para confirmar o código.'); return false; }
+  for(let tent=0; tent<3; tent++){
+    const raw=prompt((tent?'Código incorreto. ':'')+'Por segurança, digite o código de 6 dígitos do seu app autenticador:');
+    if(raw===null) return false;
+    const code=(raw||'').replace(/\D/g,'');
+    if(code.length!==6){ alert('O código tem 6 dígitos.'); continue; }
+    const {data:ch,error:e1}=await sb.auth.mfa.challenge({factorId:fid});
+    if(e1){ alert('Erro no 2FA: '+e1.message); return false; }
+    const {error:e2}=await sb.auth.mfa.verify({factorId:fid,challengeId:ch.id,code});
+    if(!e2) return true;
+  }
+  alert('Não foi possível confirmar o código. Tente de novo.'); return false;
+}
+async function updateUserSeguro(dados){
+  if(!(await garantirAAL2())) return {error:{message:'cancelado'}, cancelado:true};
+  let r=await sb.auth.updateUser(dados);
+  if(r.error && /aal2/i.test(r.error.message||'')){            // sessão ainda não aceita: confirma e tenta de novo
+    try{ await sb.auth.refreshSession(); }catch(e){}
+    if(!(await garantirAAL2())) return {error:{message:'cancelado'}, cancelado:true};
+    r=await sb.auth.updateUser(dados);
+  }
+  return r;
+}
 async function alterarSenha(){
   const nova=prompt('Digite a NOVA senha que você quer usar (mínimo 6 caracteres):');
   if(nova===null) return;
@@ -713,7 +744,8 @@ async function alterarSenha(){
   const conf=prompt('Digite a senha novamente para confirmar:');
   if(conf===null) return;
   if(conf!==nova){ alert('As senhas não são iguais. Tente de novo.'); return; }
-  const {error}=await sb.auth.updateUser({password:nova});
+  const {error,cancelado}=await updateUserSeguro({password:nova});
+  if(cancelado) return;
   if(error){ alert('Não foi possível alterar: '+error.message); return; }
   alert('Senha alterada com sucesso! Use a nova senha no próximo login.\n\nAnote em um lugar seguro — por segurança, ninguém (nem eu) tem acesso à sua senha.');
 }
@@ -867,7 +899,8 @@ async function editarEmail(){
   let atual=''; try{ const {data}=await sb.auth.getUser(); atual=data&&data.user?data.user.email:''; }catch(e){}
   const novo=(prompt('Novo e-mail de acesso:\n(atual: '+(atual||'—')+')', atual)||'').trim();
   if(!novo || novo===atual) return;
-  const {error}=await sb.auth.updateUser({email:novo});
+  const {error,cancelado}=await updateUserSeguro({email:novo});
+  if(cancelado) return;
   if(error){ alert('Não foi possível trocar: '+error.message); return; }
   alert('Enviamos um link de confirmação para '+novo+'.\n\nAbra esse e-mail e confirme para concluir a troca. Até confirmar, continue entrando com o e-mail atual.');
 }
